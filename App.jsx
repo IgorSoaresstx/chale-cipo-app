@@ -16,7 +16,7 @@ import {
    Depois de implantar o Code.gs (ver pasta apps-script/), cole aqui a URL
    que termina em /exec.
    ========================================================================= */
-const APPS_SCRIPT_URL = "COLE_AQUI_A_URL_DO_SEU_APPS_SCRIPT";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbybhcb46Vpak4gWtLugVy_z6OoFa3LJ932gPan9bS8pOYBixzISASIw6I-KvZnJkY6P_g/exec";
 
 /* =========================================================================
    CONSTANTES E CHAVES DE ARMAZENAMENTO
