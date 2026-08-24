@@ -4,7 +4,7 @@ Atualize este documento no início e no fim de cada tarefa. Não registre segred
 
 ## Estado atual
 
-- Status: `PRONTO_PARA_PUBLICAR`
+- Status: `AGUARDANDO_CONFIGURACAO_INICIAL`
 - Agente responsável: Codex
 - Atualizado em: 2026-08-24
 - Branch: `main`
@@ -53,17 +53,20 @@ Bug crítico: o aplicativo volta à tela de configuração inicial porque a chav
 - Teste final do backend: resposta `ok`, acesso à planilha confirmado e chave `config` ainda ausente, como esperado antes da criação dos PINs.
 - Frontend atualizado para usar a implantação correta do Apps Script.
 - Build final concluído com sucesso após a troca do backend.
+- Commit principal criado: `32a254e` (`Fix login persistence and add agent handoff`).
+- Push para `main` concluído em 2026-08-24.
+- Vercel confirmado usando o bundle atualizado e a implantação correta do Apps Script.
 
 ## Pendências e bloqueios
 
-- Publicar as alterações do frontend na branch `main`.
-- Testar a criação dos PINs no aplicativo após o deploy da Vercel.
+- Criar os PINs de dono e gestor diretamente no aplicativo publicado.
+- Recarregar a página e confirmar que a tela de login persiste.
 - Confirmar diretamente se a versão da Vercel corresponde ao commit atual de `main`.
 - Avaliar vulnerabilidades de dependências separadamente, sem usar correção forçada.
 
 ## Próxima ação exata
 
-Executar build final, revisar o diff e publicar a branch `main` para a Vercel.
+Abrir o aplicativo publicado, criar os PINs e confirmar a persistência após recarregar a página.
 
 ## Decisões e observações
 
