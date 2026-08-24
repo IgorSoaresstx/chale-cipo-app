@@ -880,7 +880,7 @@ function FormReserva({ inicial, onSalvar, onCancelar }) {
   );
 }
 
-function ImportarCSVAirbnb({ dados, config, onImportar, onFechar }) {
+function ImportarCSVAirbnb({ dados, config, onImportar }) {
   const [preview, setPreview] = useState(null);
   const [erro, setErro] = useState("");
   const [importando, setImportando] = useState(false);
@@ -972,7 +972,6 @@ function ImportarCSVAirbnb({ dados, config, onImportar, onFechar }) {
         reservas: [...dados.reservas, ...preview.novasReservas.map(({ duplicada, ...r }) => r)],
         repasses: [...dados.repasses, ...preview.novosRepasses], prestadores, lancamentos,
       });
-      onFechar();
     } catch (e) {
       confirmandoRef.current = false;
       setImportando(false);
@@ -1053,8 +1052,8 @@ function ReservasView({ dados, atualizar, perfil, config }) {
   }
 
   async function importarCSV(pacote) {
-    await atualizar(pacote);
     setModalImport(false);
+    await atualizar(pacote);
   }
 
   const ordenadas = [...dados.reservas].sort((a, b) => (a.checkin < b.checkin ? 1 : -1));
@@ -1109,7 +1108,7 @@ function ReservasView({ dados, atualizar, perfil, config }) {
         <FormReserva inicial={editando} onSalvar={salvarReserva} onCancelar={() => setModalAberto(false)} />
       </Modal>
       <Modal open={modalImport} onClose={() => setModalImport(false)} title="Importar extrato do Airbnb" wide>
-        <ImportarCSVAirbnb dados={dados} config={config} onImportar={importarCSV} onFechar={() => setModalImport(false)} />
+        <ImportarCSVAirbnb dados={dados} config={config} onImportar={importarCSV} />
       </Modal>
     </div>
   );
