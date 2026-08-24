@@ -2,6 +2,15 @@
 
 Atualize este documento no início e no fim de cada tarefa. Não registre segredos.
 
+## 2026-08-24 — Importação mensal do Airbnb
+
+- A importação do CSV agora exige uma tela de conferência antes de qualquer gravação.
+- Somente linhas `Reserva` viram reservas; linhas `Payout` viram repasses e ajustes de resolução ficam apenas na conciliação da prévia.
+- Ganhos brutos, valor líquido, taxa de serviço e taxa de limpeza do Airbnb são preservados separadamente.
+- Reservas e repasses são deduplicados pelos códigos do Airbnb.
+- Cada reserva do arquivo garante uma previsão de faxina pendente, no valor configurado (padrão R$ 140), sem abatimento financeiro até a baixa como paga.
+- Validação com `airbnb_07_2026-07_2026.csv`: 7 reservas, 6 repasses, 2 ajustes, bruto R$ 7.189,37, líquido R$ 6.717,87, repasses R$ 6.105,87, ajustes -R$ 612,00, conciliação R$ 0,00 e faxinas previstas R$ 980,00.
+
 ## Estado atual
 
 - Status: `CONCLUIDO`

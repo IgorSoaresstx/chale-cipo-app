@@ -130,6 +130,14 @@ async function loadValue(key, fallback, { throwOnError = false } = {}) {
   }
 }
 
+function parseDataAirbnb(valor) {
+  if (!valor) return "";
+  const partes = String(valor).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!partes) return "";
+  const [, mes, dia, ano] = partes;
+  return `${ano}-${mes.padStart(2, "0")}-${dia.padStart(2, "0")}`;
+}
+
 async function saveValue(key, value) {
   try {
     await fetch(APPS_SCRIPT_URL, {
@@ -531,7 +539,20 @@ function TopBar({ titulo, onMenuClick }) {
    CÁLCULOS DE NEGÓCIO (compartilhados entre telas)
    ========================================================================= */
 function valorLiquidoReserva(r) {
+  if (r.valorLiquidoAirbnb !== undefined && r.valorLiquidoAirbnb !== null && r.valorLiquidoAirbnb !== "") {
+    return Number(r.valorLiquidoAirbnb) || 0;
+  }
   return (Number(r.valorBruto) || 0) - (Number(r.taxaPlataforma) || 0);
+}
+
+function MetricCard({ label, value, sub }) {
+  return (
+    <div className="rounded-md border border-stone-200 bg-stone-50 p-3">
+      <p className="text-xs uppercase tracking-wide text-stone-500">{label}</p>
+      <p className="mt-1 font-mono text-lg font-semibold text-stone-900">{value}</p>
+      {sub && <p className="mt-0.5 text-xs text-stone-400">{sub}</p>}
+    </div>
+  );
 }
 
 function noitesReserva(r) {
@@ -859,71 +880,132 @@ function FormReserva({ inicial, onSalvar, onCancelar }) {
   );
 }
 
-function ImportarCSVAirbnb({ onImportar, onFechar }) {
-  const [linhas, setLinhas] = useState(null);
-  const [colunas, setColunas] = useState([]);
-  const [mapa, setMapa] = useState({ hospede: "", checkin: "", checkout: "", valorBruto: "", taxa: "" });
+function ImportarCSVAirbnb({ dados, config, onImportar, onFechar }) {
+  const [preview, setPreview] = useState(null);
+  const [erro, setErro] = useState("");
+  const [importando, setImportando] = useState(false);
+  const valorFaxina = Number(config?.valorFaxinaPadrao) || 140;
 
   function handleArquivo(e) {
     const file = e.target.files[0];
     if (!file) return;
+    setErro("");
     Papa.parse(file, {
       header: true, skipEmptyLines: true,
       complete: (res) => {
-        setColunas(res.meta.fields || []);
-        setLinhas(res.data);
-        const achar = (palavras) => (res.meta.fields || []).find((c) => palavras.some((p) => c.toLowerCase().includes(p)));
-        setMapa({
-          hospede: achar(["hóspede", "hospede", "guest"]) || "",
-          checkin: achar(["início", "inicio", "check-in", "start"]) || "",
-          checkout: achar(["término", "termino", "check-out", "end"]) || "",
-          valorBruto: achar(["valor bruto", "gross", "valor"]) || "",
-          taxa: achar(["taxa de serviço", "taxa", "service fee"]) || "",
+        const campos = res.meta.fields || [];
+        const obrigatorios = ["Tipo", "Código de Confirmação", "Data de início", "Data de término", "Hóspede", "Valor", "Taxa de serviço", "Ganhos brutos"];
+        const faltantes = obrigatorios.filter((campo) => !campos.includes(campo));
+        if (faltantes.length) {
+          setPreview(null);
+          setErro(`Este arquivo não tem o formato esperado do Airbnb. Colunas ausentes: ${faltantes.join(", ")}.`);
+          return;
+        }
+
+        const chavesExistentes = new Set(dados.reservas.map((r) =>
+          r.codigoConfirmacao || `${r.checkin}|${r.checkout}|${String(r.hospede || "").trim().toLowerCase()}`
+        ));
+        const codigosRepasse = new Set(dados.repasses.map((r) => r.codigoReferenciaAirbnb).filter(Boolean));
+        const reservas = res.data.filter((l) => String(l.Tipo).trim().toLowerCase() === "reserva").map((l) => {
+          const checkin = parseDataAirbnb(l["Data de início"]);
+          const checkout = parseDataAirbnb(l["Data de término"]);
+          const codigo = String(l["Código de Confirmação"] || "").trim();
+          const hospede = String(l.Hóspede || "Hóspede").trim();
+          const chave = codigo || `${checkin}|${checkout}|${hospede.toLowerCase()}`;
+          const existente = dados.reservas.find((r) => (r.codigoConfirmacao || `${r.checkin}|${r.checkout}|${String(r.hospede || "").trim().toLowerCase()}`) === chave);
+          return {
+            id: existente?.id || uid(), codigoConfirmacao: codigo, hospede, checkin, checkout,
+            valorBruto: parseNumeroBR(l["Ganhos brutos"]),
+            valorLiquidoAirbnb: parseNumeroBR(l.Valor),
+            taxaPlataforma: parseNumeroBR(l["Taxa de serviço"]),
+            taxaLimpezaAirbnb: parseNumeroBR(l["Taxa de limpeza"]),
+            plataforma: "Airbnb", status: checkout && checkout < todayISO() ? "Concluída" : "Confirmada",
+            avaliacao: existente?.avaliacao || "", origemArquivo: file.name, duplicada: chavesExistentes.has(chave),
+          };
+        });
+        const repasses = res.data.filter((l) => String(l.Tipo).trim().toLowerCase() === "payout").map((l) => ({
+          id: uid(), data: parseDataAirbnb(l.Data), valor: parseNumeroBR(l.Pago),
+          codigoReferenciaAirbnb: String(l["Código de referência"] || "").trim(),
+          observacao: String(l.Informações || "Repasse Airbnb").trim(), comprovanteNome: file.name,
+          reservasVinculadas: [], origemArquivo: file.name,
+        }));
+        const ajustes = res.data.filter((l) => String(l.Tipo).trim().toLowerCase() === "ajuste de resolução");
+        const novasReservas = reservas.filter((r) => !r.duplicada);
+        const novosRepasses = repasses.filter((r) => !r.codigoReferenciaAirbnb || !codigosRepasse.has(r.codigoReferenciaAirbnb));
+        const total = (lista, campo) => lista.reduce((s, item) => s + parseNumeroBR(item[campo]), 0);
+        const totalLiquido = total(reservas, "valorLiquidoAirbnb");
+        const totalAjustes = ajustes.reduce((s, l) => s + parseNumeroBR(l.Valor), 0);
+        const totalRepasses = total(repasses, "valor");
+        setPreview({
+          arquivo: file.name, reservas, novasReservas, repasses, novosRepasses, ajustes,
+          totalBruto: total(reservas, "valorBruto"), totalLiquido,
+          totalTaxas: total(reservas, "taxaPlataforma"), totalAjustes, totalRepasses,
+          diferenca: totalRepasses - (totalLiquido + totalAjustes),
         });
       },
+      error: () => setErro("Não foi possível ler o arquivo. Exporte novamente o CSV pelo Airbnb."),
     });
   }
 
-  function confirmar() {
-    const reservasNovas = linhas
-      .filter((l) => l[mapa.hospede] || l[mapa.checkin])
-      .map((l) => ({
-        id: uid(),
-        hospede: l[mapa.hospede] || "Hóspede",
-        checkin: l[mapa.checkin] ? new Date(l[mapa.checkin]).toISOString().slice(0, 10) : "",
-        checkout: l[mapa.checkout] ? new Date(l[mapa.checkout]).toISOString().slice(0, 10) : "",
-        valorBruto: parseNumeroBR(l[mapa.valorBruto]),
-        taxaPlataforma: parseNumeroBR(l[mapa.taxa]),
-        plataforma: "Airbnb",
-        status: "Confirmada",
-        avaliacao: "",
-      }));
-    onImportar(reservasNovas);
+  async function confirmar() {
+    if (!preview) return;
+    setImportando(true);
+    const prestadores = [...dados.prestadores];
+    let faxina = prestadores.find((p) => p.tipo === "Faxina");
+    if (!faxina) {
+      faxina = { id: uid(), nome: "Faxina do chalé", tipo: "Faxina", formaCobranca: "execucao", valorUnitario: valorFaxina, diaPagamento: Number(config?.diaPagamentoPadrao) || 10, contato: "" };
+      prestadores.push(faxina);
+    }
+    const lancamentos = [...dados.lancamentos];
+    preview.reservas.forEach((reserva) => {
+      const existe = lancamentos.some((l) => l.origemReservaId === reserva.id && (l.tipo === "faxina" || l.prestadorId === faxina.id));
+      if (!existe) lancamentos.push({
+        id: uid(), tipo: "faxina", previsao: true, prestadorId: faxina.id, data: reserva.checkout,
+        valor: valorFaxina, origemReservaId: reserva.id, status: "pendente",
+        descricao: `Previsão de faxina — checkout de ${reserva.hospede} (${formatDateBR(reserva.checkout)})`,
+      });
+    });
+    await onImportar({
+      reservas: [...dados.reservas, ...preview.novasReservas.map(({ duplicada, ...r }) => r)],
+      repasses: [...dados.repasses, ...preview.novosRepasses], prestadores, lancamentos,
+    });
+    setImportando(false);
   }
 
   return (
     <div>
-      {!linhas ? (
+      {!preview ? (
         <div>
-          <p className="text-sm text-stone-500 mb-3">
-            Baixe o histórico de transações no painel do Airbnb (Relatórios financeiros → Histórico de transações → Exportar CSV) e selecione o arquivo abaixo.
-          </p>
+          <p className="text-sm text-stone-500 mb-3">Selecione o histórico de transações exportado pelo Airbnb. Nada será salvo antes da tela de conferência.</p>
           <input type="file" accept=".csv" onChange={handleArquivo} className="text-sm" />
+          {erro && <p className="text-sm text-rose-600 mt-3">{erro}</p>}
         </div>
       ) : (
-        <div>
-          <p className="text-sm text-stone-500 mb-3">{linhas.length} linha(s) encontrada(s). Confirme quais colunas correspondem a cada campo:</p>
-          {["hospede", "checkin", "checkout", "valorBruto", "taxa"].map((campo) => (
-            <Field key={campo} label={campo}>
-              <Select value={mapa[campo]} onChange={(e) => setMapa({ ...mapa, [campo]: e.target.value })}>
-                <option value="">— não mapear —</option>
-                {colunas.map((c) => <option key={c} value={c}>{c}</option>)}
-              </Select>
-            </Field>
-          ))}
-          <div className="flex gap-2 justify-end mt-2">
-            <Button variant="secondary" onClick={onFechar}>Cancelar</Button>
-            <Button onClick={confirmar}>Importar {linhas.length} reserva(s)</Button>
+        <div className="space-y-4">
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <strong>Conferência obrigatória:</strong> nenhum dado foi gravado. Revise os valores abaixo e confirme somente se estiverem corretos.
+          </div>
+          <div className="flex justify-between gap-3 text-sm"><span className="text-stone-500">Arquivo</span><strong>{preview.arquivo}</strong></div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <MetricCard label="Reservas novas" value={`${preview.novasReservas.length}`} sub={`${preview.reservas.length - preview.novasReservas.length} já existentes`} />
+            <MetricCard label="Ganhos brutos" value={formatBRL(preview.totalBruto)} sub={`${formatBRL(preview.totalTaxas)} em taxas`} />
+            <MetricCard label="Líquido Airbnb" value={formatBRL(preview.totalLiquido)} sub="Antes dos ajustes" />
+            <MetricCard label="Faxinas previstas" value={formatBRL(preview.reservas.length * valorFaxina)} sub={`${preview.reservas.length} × ${formatBRL(valorFaxina)}`} />
+          </div>
+          <div className="overflow-x-auto max-h-64 border border-stone-200 rounded-md">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-stone-50"><tr className="text-left text-stone-500"><th className="p-2">Hóspede / código</th><th className="p-2">Período</th><th className="p-2">Bruto</th><th className="p-2">Líquido</th><th className="p-2">Situação</th></tr></thead>
+              <tbody>{preview.reservas.map((r) => <tr key={r.codigoConfirmacao || r.id} className="border-t border-stone-100"><td className="p-2"><strong>{r.hospede}</strong><br/><span className="font-mono text-stone-400">{r.codigoConfirmacao || "sem código"}</span></td><td className="p-2">{formatDateBR(r.checkin)} a {formatDateBR(r.checkout)}</td><td className="p-2 font-mono">{formatBRL(r.valorBruto)}</td><td className="p-2 font-mono">{formatBRL(r.valorLiquidoAirbnb)}</td><td className="p-2">{r.duplicada ? <Badge tone="amber">Já existe</Badge> : <Badge tone="emerald">Nova</Badge>}</td></tr>)}</tbody>
+            </table>
+          </div>
+          <div className="grid md:grid-cols-2 gap-3 text-sm">
+            <div className="border border-stone-200 rounded-md p-3"><p className="font-semibold">Conferência dos repasses</p><p className="mt-2 flex justify-between"><span>Repasses no arquivo</span><strong>{formatBRL(preview.totalRepasses)}</strong></p><p className="flex justify-between"><span>Ajustes do Airbnb</span><strong>{formatBRL(preview.totalAjustes)}</strong></p><p className="flex justify-between"><span>Diferença da conciliação</span><strong className={Math.abs(preview.diferenca) < 0.01 ? "text-emerald-700" : "text-rose-600"}>{formatBRL(preview.diferenca)}</strong></p></div>
+            <div className="border border-stone-200 rounded-md p-3"><p className="font-semibold">O que será implantado</p><p className="mt-2">{preview.novasReservas.length} reserva(s) nova(s) e {preview.novosRepasses.length} repasse(s) novo(s).</p><p className="mt-1 text-stone-500">Cada reserva terá uma faxina pendente de {formatBRL(valorFaxina)}. Ela aparecerá na previsão de pagamentos e não será abatida até ser marcada como paga.</p></div>
+          </div>
+          {preview.ajustes.length > 0 && <p className="text-xs text-amber-700"><FileWarning size={14} className="inline mr-1"/>{preview.ajustes.length} ajuste(s) do Airbnb entram somente na conciliação desta prévia; não serão cadastrados automaticamente como despesa.</p>}
+          <div className="flex gap-2 justify-end">
+            <Button variant="secondary" onClick={() => { setPreview(null); setErro(""); }}>Escolher outro arquivo</Button>
+            <Button onClick={confirmar} disabled={importando}>{importando ? "Implantando..." : "Confirmar e implantar"}</Button>
           </div>
         </div>
       )}
@@ -931,7 +1013,7 @@ function ImportarCSVAirbnb({ onImportar, onFechar }) {
   );
 }
 
-function ReservasView({ dados, atualizar, perfil }) {
+function ReservasView({ dados, atualizar, perfil, config }) {
   const [modalAberto, setModalAberto] = useState(false);
   const [modalImport, setModalImport] = useState(false);
   const [editando, setEditando] = useState(null);
@@ -961,8 +1043,8 @@ function ReservasView({ dados, atualizar, perfil }) {
     await atualizar({ reservas: dados.reservas.filter((r) => r.id !== id) });
   }
 
-  async function importarCSV(novas) {
-    await atualizar({ reservas: [...dados.reservas, ...novas] });
+  async function importarCSV(pacote) {
+    await atualizar(pacote);
     setModalImport(false);
   }
 
@@ -1018,7 +1100,7 @@ function ReservasView({ dados, atualizar, perfil }) {
         <FormReserva inicial={editando} onSalvar={salvarReserva} onCancelar={() => setModalAberto(false)} />
       </Modal>
       <Modal open={modalImport} onClose={() => setModalImport(false)} title="Importar extrato do Airbnb" wide>
-        <ImportarCSVAirbnb onImportar={importarCSV} onFechar={() => setModalImport(false)} />
+        <ImportarCSVAirbnb dados={dados} config={config} onImportar={importarCSV} onFechar={() => setModalImport(false)} />
       </Modal>
     </div>
   );
@@ -1781,7 +1863,7 @@ export default function App() {
           {view === "dashboard" && <DashboardView dados={dados} perfil={perfil} />}
           {view === "financeiro" && perfil === "dono" && <AnaliseFinanceiraView dados={dados} atualizar={atualizar} />}
           {view === "calendario" && <CalendarioView dados={dados} />}
-          {view === "reservas" && <ReservasView dados={dados} atualizar={atualizar} perfil={perfil} />}
+          {view === "reservas" && <ReservasView dados={dados} atualizar={atualizar} perfil={perfil} config={config} />}
           {view === "repasses" && <RepassesView dados={dados} atualizar={atualizar} />}
           {view === "despesas" && <DespesasView dados={dados} atualizar={atualizar} />}
           {view === "prestadores" && perfil === "dono" && <PrestadoresView dados={dados} atualizar={atualizar} />}
