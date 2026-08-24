@@ -4,7 +4,7 @@ Atualize este documento no início e no fim de cada tarefa. Não registre segred
 
 ## Estado atual
 
-- Status: `CORRECAO_CROSS_BROWSER_VALIDADA_LOCALMENTE`
+- Status: `CONCLUIDO`
 - Agente responsável: Codex
 - Atualizado em: 2026-08-24
 - Branch: `main`
@@ -65,6 +65,9 @@ Bug crítico: o aplicativo volta à tela de configuração inicial porque a chav
 - Falhas transitórias de backend não exibem mais a configuração inicial; agora mostram erro e opção de tentar novamente.
 - Teste automatizado com dois perfis limpos e independentes do Chrome: ambos exibiram a tela de login e nenhum exibiu a configuração inicial.
 - Build da correção cross-browser concluído com sucesso.
+- Commit cross-browser publicado: `f099657` (`Fix shared login loading across browsers`).
+- Vercel confirmado com o hash exato do novo build.
+- Teste final na URL pública com dois novos perfis isolados do Chrome: ambos exibiram login; nenhum exibiu configuração inicial ou erro de carregamento.
 
 ## Pendências e bloqueios
 
