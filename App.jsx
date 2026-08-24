@@ -1025,6 +1025,7 @@ function ReservasView({ dados, atualizar, perfil, config }) {
   const [modalAberto, setModalAberto] = useState(false);
   const [modalImport, setModalImport] = useState(false);
   const [editando, setEditando] = useState(null);
+  const [mesFiltro, setMesFiltro] = useState("");
 
   async function salvarReserva(form) {
     let lista = [...dados.reservas];
@@ -1056,12 +1057,14 @@ function ReservasView({ dados, atualizar, perfil, config }) {
     await atualizar(pacote);
   }
 
-  const ordenadas = [...dados.reservas].sort((a, b) => (a.checkin < b.checkin ? 1 : -1));
+  const mesesDisponiveis = [...new Set(dados.reservas.map((r) => monthKey(r.checkin)).filter(Boolean))].sort().reverse();
+  const reservasFiltradas = mesFiltro ? dados.reservas.filter((r) => monthKey(r.checkin) === mesFiltro) : dados.reservas;
+  const ordenadas = [...reservasFiltradas].sort((a, b) => (a.checkin < b.checkin ? 1 : -1));
 
   return (
     <div>
       <SectionTitle
-        icon={ClipboardList} title="Reservas" subtitle={`${dados.reservas.length} reserva(s) cadastradas`}
+        icon={ClipboardList} title="Reservas" subtitle={mesFiltro ? `${ordenadas.length} reserva(s) em ${nomeMes(mesFiltro)}` : `${dados.reservas.length} reserva(s) cadastradas`}
         action={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => setModalImport(true)}><Upload size={15} /> Importar CSV</Button>
@@ -1069,8 +1072,17 @@ function ReservasView({ dados, atualizar, perfil, config }) {
           </div>
         }
       />
+      {dados.reservas.length > 0 && (
+        <div className="mb-4 flex items-center gap-2">
+          <label htmlFor="filtro-mes-reservas" className="text-sm font-medium text-stone-600">Mês:</label>
+          <Select id="filtro-mes-reservas" value={mesFiltro} onChange={(e) => setMesFiltro(e.target.value)} className="max-w-52">
+            <option value="">Todos os meses</option>
+            {mesesDisponiveis.map((mes) => <option key={mes} value={mes}>{nomeMes(mes)}</option>)}
+          </Select>
+        </div>
+      )}
       {ordenadas.length === 0 ? (
-        <EmptyState icon={ClipboardList} title="Nenhuma reserva ainda" subtitle="Cadastre manualmente ou importe o CSV do Airbnb." />
+        <EmptyState icon={ClipboardList} title={mesFiltro ? `Nenhuma reserva em ${nomeMes(mesFiltro)}` : "Nenhuma reserva ainda"} subtitle={mesFiltro ? "Escolha outro mês ou exiba todos os meses." : "Cadastre manualmente ou importe o CSV do Airbnb."} />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
