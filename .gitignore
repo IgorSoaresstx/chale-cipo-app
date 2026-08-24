@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.local
+*.log
+.DS_Store
+Thumbs.db
+.clasp.json
+.apps-script-remote/
+.apps-script-visible/
+.apps-script-correct/

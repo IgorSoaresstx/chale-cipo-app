@@ -16,7 +16,7 @@ import {
    Depois de implantar o Code.gs (ver pasta apps-script/), cole aqui a URL
    que termina em /exec.
    ========================================================================= */
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbybhcb46Vpak4gWtLugVy_z6OoFa3LJ932gPan9bS8pOYBixzISASIw6I-KvZnJkY6P_g/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz_kAqpOT4FtRhhhRzhmHKFYapv8RXc6si3mcCePlbweJvHpECSRga3keyh7_OLti1e/exec";
 
 /* =========================================================================
    CONSTANTES E CHAVES DE ARMAZENAMENTO
@@ -375,6 +375,7 @@ function TelaSetupInicial({ onConcluido }) {
   const [pinDono, setPinDono] = useState("");
   const [pinGestor, setPinGestor] = useState("");
   const [erro, setErro] = useState("");
+  const [salvando, setSalvando] = useState(false);
 
   async function salvar() {
     if (pinDono.length < 4 || pinGestor.length < 4) {
@@ -385,9 +386,27 @@ function TelaSetupInicial({ onConcluido }) {
       setErro("Os PINs do dono e do gestor devem ser diferentes.");
       return;
     }
+    setErro("");
+    setSalvando(true);
     const config = { ...DEFAULT_CONFIG, pinDono, pinGestor, setupCompleto: true };
-    await saveValue(KEYS.config, config);
-    onConcluido(config);
+    const salvo = await saveValue(KEYS.config, config);
+    if (!salvo) {
+      setErro("Não foi possível salvar os acessos na planilha. Confira a implantação do Apps Script e tente novamente.");
+      setSalvando(false);
+      return;
+    }
+
+    const confirmado = await loadValue(KEYS.config, null);
+    const persistiu = confirmado?.setupCompleto
+      && confirmado.pinDono === pinDono
+      && confirmado.pinGestor === pinGestor;
+    if (!persistiu) {
+      setErro("O backend respondeu, mas não devolveu os acessos gravados. Verifique a planilha e a versão implantada do Apps Script.");
+      setSalvando(false);
+      return;
+    }
+
+    onConcluido(confirmado);
   }
 
   return (
@@ -402,7 +421,9 @@ function TelaSetupInicial({ onConcluido }) {
           <Input type="password" inputMode="numeric" maxLength={6} value={pinGestor} onChange={(e) => setPinGestor(e.target.value.replace(/\D/g, ""))} placeholder="ex: 5678" />
         </Field>
         {erro && <p className="text-sm text-rose-600 mb-3">{erro}</p>}
-        <Button onClick={salvar} className="w-full">Criar acessos</Button>
+        <Button onClick={salvar} disabled={salvando} className="w-full">
+          {salvando ? <><Loader2 size={15} className="animate-spin" /> Salvando...</> : "Criar acessos"}
+        </Button>
         <p className="text-xs text-stone-400 mt-4">
           Os dados deste app ficam num armazenamento compartilhado do link do artefato — qualquer pessoa com o link consegue acessar. Não compartilhe o link à toa.
         </p>
@@ -1623,6 +1644,7 @@ function ManutencaoView({ dados, atualizar }) {
 function ConfigView({ config, onSalvarConfig }) {
   const [form, setForm] = useState(config);
   const [salvo, setSalvo] = useState(false);
+  const [erro, setErro] = useState("");
   return (
     <div>
       <SectionTitle icon={Settings} title="Configurações" subtitle="Parâmetros do app" />
@@ -1632,10 +1654,20 @@ function ConfigView({ config, onSalvarConfig }) {
         <Field label="Comissão padrão do gestor (%)" hint="Usado ao cadastrar o gestor como prestador">
           <Input type="number" value={form.comissaoPadrao} onChange={(e) => setForm({ ...form, comissaoPadrao: e.target.value })} />
         </Field>
-        <Button onClick={async () => { await onSalvarConfig(form); setSalvo(true); setTimeout(() => setSalvo(false), 2000); }}>
+        <Button onClick={async () => {
+          setErro("");
+          const ok = await onSalvarConfig(form);
+          if (!ok) {
+            setErro("Não foi possível salvar as configurações na planilha.");
+            return;
+          }
+          setSalvo(true);
+          setTimeout(() => setSalvo(false), 2000);
+        }}>
           Salvar configurações
         </Button>
         {salvo && <p className="text-sm text-emerald-700 mt-2">Salvo!</p>}
+        {erro && <p className="text-sm text-rose-600 mt-2">{erro}</p>}
       </Card>
       <Card className="p-4 max-w-md mt-4 bg-stone-50">
         <h3 className="font-serif font-semibold text-stone-800 mb-2 flex items-center gap-2"><FileWarning size={16} /> Fora do escopo desta versão</h3>
@@ -1702,8 +1734,9 @@ export default function App() {
   }, []);
 
   async function salvarConfig(novaConfig) {
-    setConfig(novaConfig);
-    await saveValue(KEYS.config, novaConfig);
+    const ok = await saveValue(KEYS.config, novaConfig);
+    if (ok) setConfig(novaConfig);
+    return ok;
   }
 
   if (carregando) {
