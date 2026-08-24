@@ -4,7 +4,7 @@ Atualize este documento no início e no fim de cada tarefa. Não registre segred
 
 ## Estado atual
 
-- Status: `AGUARDANDO_CONFIGURACAO_INICIAL`
+- Status: `CORRECAO_CORS_EM_VALIDACAO`
 - Agente responsável: Codex
 - Atualizado em: 2026-08-24
 - Branch: `main`
@@ -56,6 +56,9 @@ Bug crítico: o aplicativo volta à tela de configuração inicial porque a chav
 - Commit principal criado: `32a254e` (`Fix login persistence and add agent handoff`).
 - Push para `main` concluído em 2026-08-24.
 - Vercel confirmado usando o bundle atualizado e a implantação correta do Apps Script.
+- Teste técnico de POST e GET confirmou que o backend persiste dados corretamente.
+- Falha restante identificada no navegador: a resposta do POST do Apps Script é bloqueada por CORS.
+- Frontend ajustado para POST `no-cors` seguido de confirmação por JSONP.
 
 ## Pendências e bloqueios
 

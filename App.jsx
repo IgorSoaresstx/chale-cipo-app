@@ -147,13 +147,21 @@ async function loadValue(key, fallback) {
 
 async function saveValue(key, value) {
   try {
-    const resp = await fetch(APPS_SCRIPT_URL, {
+    await fetch(APPS_SCRIPT_URL, {
       method: "POST",
+      mode: "no-cors",
       headers: { "Content-Type": "text/plain;charset=utf-8" }, // evita pre-flight de CORS
       body: JSON.stringify({ action: "set", key, value: JSON.stringify(value) }),
     });
-    const data = await resp.json();
-    return !!data.ok;
+
+    // A resposta do Apps Script é opaca no navegador por causa do CORS.
+    // Confirma a persistência relendo a mesma chave pelo canal JSONP.
+    for (let tentativa = 0; tentativa < 3; tentativa += 1) {
+      if (tentativa > 0) await new Promise((resolve) => setTimeout(resolve, 350));
+      const confirmado = await loadValue(key, null);
+      if (JSON.stringify(confirmado) === JSON.stringify(value)) return true;
+    }
+    return false;
   } catch (e) {
     console.error("Erro ao salvar:", key, e);
     return false;
