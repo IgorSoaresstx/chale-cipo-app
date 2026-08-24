@@ -110,37 +110,22 @@ function ultimosNMeses(n) {
 
 /* =========================================================================
    ARMAZENAMENTO PERSISTENTE (Google Apps Script — mesma planilha, leitura via
-   JSONP e escrita via POST text/plain, igual ao app financeiro pessoal)
+   GET com CORS e escrita via POST text/plain sem leitura da resposta)
    ========================================================================= */
-let _jsonpContador = 0;
-function jsonpRequest(url) {
-  return new Promise((resolve, reject) => {
-    _jsonpContador += 1;
-    const nomeCallback = `_cbAppsScript${Date.now()}_${_jsonpContador}`;
-    const script = document.createElement("script");
-    const timeout = setTimeout(() => {
-      limpar();
-      reject(new Error("Tempo esgotado ao falar com a planilha"));
-    }, 15000);
-    function limpar() {
-      clearTimeout(timeout);
-      delete window[nomeCallback];
-      script.remove();
-    }
-    window[nomeCallback] = (data) => { limpar(); resolve(data); };
-    script.src = `${url}${url.includes("?") ? "&" : "?"}callback=${nomeCallback}`;
-    script.onerror = () => { limpar(); reject(new Error("Falha ao conectar com a planilha")); };
-    document.body.appendChild(script);
-  });
-}
-
-async function loadValue(key, fallback) {
+async function loadValue(key, fallback, { throwOnError = false } = {}) {
   try {
-    const data = await jsonpRequest(`${APPS_SCRIPT_URL}?action=get&key=${encodeURIComponent(key)}`);
+    const resp = await fetch(
+      `${APPS_SCRIPT_URL}?action=get&key=${encodeURIComponent(key)}&_=${Date.now()}`,
+      { method: "GET", cache: "no-store" },
+    );
+    if (!resp.ok) throw new Error(`Falha ao carregar a planilha (${resp.status})`);
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error || "O backend recusou a leitura");
     if (!data.ok || data.value === null || data.value === undefined || data.value === "") return fallback;
     return JSON.parse(data.value);
   } catch (e) {
     console.error("Erro ao carregar:", key, e);
+    if (throwOnError) throw e;
     return fallback;
   }
 }
@@ -1696,6 +1681,7 @@ function ConfigView({ config, onSalvarConfig }) {
    ========================================================================= */
 export default function App() {
   const [carregando, setCarregando] = useState(true);
+  const [erroInicial, setErroInicial] = useState("");
   const [config, setConfig] = useState(null);
   const [perfil, setPerfil] = useState(null);
   const [view, setView] = useState("dashboard");
@@ -1712,19 +1698,24 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const [cfg, r, rp, d, p, l, m, mt] = await Promise.all([
-        loadValue(KEYS.config, DEFAULT_CONFIG),
-        loadValue(KEYS.reservas, []),
-        loadValue(KEYS.repasses, []),
-        loadValue(KEYS.despesas, []),
-        loadValue(KEYS.prestadores, []),
-        loadValue(KEYS.lancamentos, []),
-        loadValue(KEYS.manutencao, []),
-        loadValue(KEYS.metas, []),
-      ]);
-      setConfig(cfg); setReservas(r); setRepasses(rp); setDespesas(d);
-      setPrestadores(p); setLancamentos(l); setManutencao(m); setMetas(mt);
-      setCarregando(false);
+      try {
+        const [cfg, r, rp, d, p, l, m, mt] = await Promise.all([
+          loadValue(KEYS.config, DEFAULT_CONFIG, { throwOnError: true }),
+          loadValue(KEYS.reservas, []),
+          loadValue(KEYS.repasses, []),
+          loadValue(KEYS.despesas, []),
+          loadValue(KEYS.prestadores, []),
+          loadValue(KEYS.lancamentos, []),
+          loadValue(KEYS.manutencao, []),
+          loadValue(KEYS.metas, []),
+        ]);
+        setConfig(cfg); setReservas(r); setRepasses(rp); setDespesas(d);
+        setPrestadores(p); setLancamentos(l); setManutencao(m); setMetas(mt);
+      } catch (e) {
+        setErroInicial("Não foi possível carregar a configuração compartilhada. Verifique a conexão e tente novamente.");
+      } finally {
+        setCarregando(false);
+      }
     })();
   }, []);
 
@@ -1751,6 +1742,19 @@ export default function App() {
     return (
       <div className="min-h-screen bg-stone-900 flex items-center justify-center">
         <Loader2 className="animate-spin text-emerald-500" size={32} />
+      </div>
+    );
+  }
+
+  if (erroInicial) {
+    return (
+      <div className="min-h-screen bg-stone-900 flex items-center justify-center p-4">
+        <Card className="max-w-md w-full p-6 text-center">
+          <FileWarning size={32} className="text-amber-600 mx-auto mb-3" />
+          <h1 className="text-xl font-serif font-bold text-stone-900 mb-2">Não foi possível carregar o sistema</h1>
+          <p className="text-sm text-stone-600 mb-5">{erroInicial}</p>
+          <Button onClick={() => window.location.reload()} className="w-full">Tentar novamente</Button>
+        </Card>
       </div>
     );
   }

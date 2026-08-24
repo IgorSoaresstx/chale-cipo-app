@@ -4,7 +4,7 @@ Atualize este documento no início e no fim de cada tarefa. Não registre segred
 
 ## Estado atual
 
-- Status: `CORRECAO_CORS_EM_VALIDACAO`
+- Status: `CORRECAO_CROSS_BROWSER_VALIDADA_LOCALMENTE`
 - Agente responsável: Codex
 - Atualizado em: 2026-08-24
 - Branch: `main`
@@ -58,7 +58,13 @@ Bug crítico: o aplicativo volta à tela de configuração inicial porque a chav
 - Vercel confirmado usando o bundle atualizado e a implantação correta do Apps Script.
 - Teste técnico de POST e GET confirmou que o backend persiste dados corretamente.
 - Falha restante identificada no navegador: a resposta do POST do Apps Script é bloqueada por CORS.
-- Frontend ajustado para POST `no-cors` seguido de confirmação por JSONP.
+- Frontend ajustado para POST `no-cors` seguido de confirmação por GET com CORS.
+- Backend confirmado com `config` válida, `setupCompleto` e ambos os PINs presentes, sem exposição dos valores.
+- Falha reproduzida: o GET JSONP falha em uma sessão nova, enquanto o GET JSON com CORS responde corretamente.
+- Leitura migrada de JSONP para `fetch` GET com CORS e cache desativado.
+- Falhas transitórias de backend não exibem mais a configuração inicial; agora mostram erro e opção de tentar novamente.
+- Teste automatizado com dois perfis limpos e independentes do Chrome: ambos exibiram a tela de login e nenhum exibiu a configuração inicial.
+- Build da correção cross-browser concluído com sucesso.
 
 ## Pendências e bloqueios
 

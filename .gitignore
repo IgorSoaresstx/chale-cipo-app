@@ -11,3 +11,5 @@ Thumbs.db
 .apps-script-remote/
 .apps-script-visible/
 .apps-script-correct/
+.test-browser-*
+.test-edge-*
