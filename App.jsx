@@ -113,21 +113,31 @@ function ultimosNMeses(n) {
    GET com CORS e escrita via POST text/plain sem leitura da resposta)
    ========================================================================= */
 async function loadValue(key, fallback, { throwOnError = false } = {}) {
-  try {
-    const resp = await fetch(
-      `${APPS_SCRIPT_URL}?action=get&key=${encodeURIComponent(key)}&_=${Date.now()}`,
-      { method: "GET", cache: "no-store" },
-    );
-    if (!resp.ok) throw new Error(`Falha ao carregar a planilha (${resp.status})`);
-    const data = await resp.json();
-    if (!data.ok) throw new Error(data.error || "O backend recusou a leitura");
-    if (!data.ok || data.value === null || data.value === undefined || data.value === "") return fallback;
-    return JSON.parse(data.value);
-  } catch (e) {
-    console.error("Erro ao carregar:", key, e);
-    if (throwOnError) throw e;
-    return fallback;
+  let ultimoErro;
+  for (let tentativa = 0; tentativa < 4; tentativa += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      if (tentativa > 0) await new Promise((resolve) => setTimeout(resolve, 700 * tentativa));
+      const resp = await fetch(
+        `${APPS_SCRIPT_URL}?action=get&key=${encodeURIComponent(key)}&_=${Date.now()}-${tentativa}`,
+        { method: "GET", cache: "no-store", signal: controller.signal },
+      );
+      if (!resp.ok) throw new Error(`Falha ao carregar a planilha (${resp.status})`);
+      const data = await resp.json();
+      if (!data.ok) throw new Error(data.error || "O backend recusou a leitura");
+      if (data.value === null || data.value === undefined || data.value === "") return fallback;
+      return JSON.parse(data.value);
+    } catch (e) {
+      ultimoErro = e;
+      console.warn(`Tentativa ${tentativa + 1} de carregar ${key} falhou.`, e);
+    } finally {
+      clearTimeout(timeout);
+    }
   }
+  console.error("Erro ao carregar após novas tentativas:", key, ultimoErro);
+  if (throwOnError) throw ultimoErro;
+  return fallback;
 }
 
 function parseDataAirbnb(valor) {
@@ -1801,17 +1811,18 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const [cfg, r, rp, d, p, l, m, mt] = await Promise.all([
-          loadValue(KEYS.config, DEFAULT_CONFIG, { throwOnError: true }),
-          loadValue(KEYS.reservas, []),
-          loadValue(KEYS.repasses, []),
-          loadValue(KEYS.despesas, []),
-          loadValue(KEYS.prestadores, []),
-          loadValue(KEYS.lancamentos, []),
-          loadValue(KEYS.manutencao, []),
-          loadValue(KEYS.metas, []),
-        ]);
-        setConfig(cfg); setReservas(r); setRepasses(rp); setDespesas(d);
+        // A configuração de acesso é carregada sozinha para não competir com
+        // várias chamadas simultâneas ao Apps Script em momentos de lentidão.
+        const cfg = await loadValue(KEYS.config, DEFAULT_CONFIG, { throwOnError: true });
+        setConfig(cfg);
+        const r = await loadValue(KEYS.reservas, []);
+        const rp = await loadValue(KEYS.repasses, []);
+        const d = await loadValue(KEYS.despesas, []);
+        const p = await loadValue(KEYS.prestadores, []);
+        const l = await loadValue(KEYS.lancamentos, []);
+        const m = await loadValue(KEYS.manutencao, []);
+        const mt = await loadValue(KEYS.metas, []);
+        setReservas(r); setRepasses(rp); setDespesas(d);
         setPrestadores(p); setLancamentos(l); setManutencao(m); setMetas(mt);
       } catch (e) {
         setErroInicial("Não foi possível carregar a configuração compartilhada. Verifique a conexão e tente novamente.");
