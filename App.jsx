@@ -98,6 +98,10 @@ function monthKey(iso) {
   return iso ? iso.slice(0, 7) : "";
 }
 
+function mesPagamentoReserva(reserva) {
+  return monthKey(reserva.dataPagamentoAirbnb || reserva.dataPagamento || reserva.checkout || reserva.checkin);
+}
+
 function diffDias(isoA, isoB) {
   if (!isoA || !isoB) return 0;
   const a = new Date(isoA + "T00:00:00");
@@ -952,6 +956,7 @@ function ImportarCSVAirbnb({ dados, config, onImportar }) {
             valorLiquidoAirbnb: parseNumeroBR(l.Valor),
             taxaPlataforma: parseNumeroBR(l["Taxa de serviço"]),
             taxaLimpezaAirbnb: parseNumeroBR(l["Taxa de limpeza"]),
+            dataPagamentoAirbnb: parseDataAirbnb(l.Data),
             plataforma: "Airbnb", status: checkout && checkout < todayISO() ? "Concluída" : "Confirmada",
             avaliacao: existente?.avaliacao || "", origemArquivo: file.name, duplicada: chavesExistentes.has(chave),
           };
@@ -1089,14 +1094,14 @@ function ReservasView({ dados, atualizar, perfil, config }) {
     await atualizar(pacote);
   }
 
-  const mesesDisponiveis = [...new Set(dados.reservas.map((r) => monthKey(r.checkin)).filter(Boolean))].sort().reverse();
-  const reservasFiltradas = mesFiltro ? dados.reservas.filter((r) => monthKey(r.checkin) === mesFiltro) : dados.reservas;
+  const mesesDisponiveis = [...new Set(dados.reservas.map(mesPagamentoReserva).filter(Boolean))].sort().reverse();
+  const reservasFiltradas = mesFiltro ? dados.reservas.filter((r) => mesPagamentoReserva(r) === mesFiltro) : dados.reservas;
   const ordenadas = [...reservasFiltradas].sort((a, b) => (a.checkin < b.checkin ? 1 : -1));
 
   return (
     <div>
       <SectionTitle
-        icon={ClipboardList} title="Reservas" subtitle={mesFiltro ? `${ordenadas.length} reserva(s) em ${nomeMes(mesFiltro)}` : `${dados.reservas.length} reserva(s) cadastradas`}
+        icon={ClipboardList} title="Reservas" subtitle={mesFiltro ? `${ordenadas.length} reserva(s) paga(s) em ${nomeMes(mesFiltro)}` : `${dados.reservas.length} reserva(s) cadastradas`}
         action={
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => setModalImport(true)}><Upload size={15} /> Importar CSV</Button>
@@ -1106,7 +1111,7 @@ function ReservasView({ dados, atualizar, perfil, config }) {
       />
       {dados.reservas.length > 0 && (
         <div className="mb-4 flex items-center gap-2">
-          <label htmlFor="filtro-mes-reservas" className="text-sm font-medium text-stone-600">Mês:</label>
+          <label htmlFor="filtro-mes-reservas" className="text-sm font-medium text-stone-600">Mês do pagamento:</label>
           <Select id="filtro-mes-reservas" value={mesFiltro} onChange={(e) => setMesFiltro(e.target.value)} className="max-w-52">
             <option value="">Todos os meses</option>
             {mesesDisponiveis.map((mes) => <option key={mes} value={mes}>{nomeMes(mes)}</option>)}
