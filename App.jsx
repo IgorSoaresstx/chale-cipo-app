@@ -884,6 +884,7 @@ function ImportarCSVAirbnb({ dados, config, onImportar, onFechar }) {
   const [preview, setPreview] = useState(null);
   const [erro, setErro] = useState("");
   const [importando, setImportando] = useState(false);
+  const confirmandoRef = React.useRef(false);
   const valorFaxina = Number(config?.valorFaxinaPadrao) || 140;
 
   function handleArquivo(e) {
@@ -948,28 +949,35 @@ function ImportarCSVAirbnb({ dados, config, onImportar, onFechar }) {
   }
 
   async function confirmar() {
-    if (!preview) return;
+    if (!preview || confirmandoRef.current) return;
+    confirmandoRef.current = true;
     setImportando(true);
-    const prestadores = [...dados.prestadores];
-    let faxina = prestadores.find((p) => p.tipo === "Faxina");
-    if (!faxina) {
-      faxina = { id: uid(), nome: "Faxina do chalé", tipo: "Faxina", formaCobranca: "execucao", valorUnitario: valorFaxina, diaPagamento: Number(config?.diaPagamentoPadrao) || 10, contato: "" };
-      prestadores.push(faxina);
-    }
-    const lancamentos = [...dados.lancamentos];
-    preview.reservas.forEach((reserva) => {
-      const existe = lancamentos.some((l) => l.origemReservaId === reserva.id && (l.tipo === "faxina" || l.prestadorId === faxina.id));
-      if (!existe) lancamentos.push({
-        id: uid(), tipo: "faxina", previsao: true, prestadorId: faxina.id, data: reserva.checkout,
-        valor: valorFaxina, origemReservaId: reserva.id, status: "pendente",
-        descricao: `Previsão de faxina — checkout de ${reserva.hospede} (${formatDateBR(reserva.checkout)})`,
+    try {
+      const prestadores = [...dados.prestadores];
+      let faxina = prestadores.find((p) => p.tipo === "Faxina");
+      if (!faxina) {
+        faxina = { id: uid(), nome: "Faxina do chalé", tipo: "Faxina", formaCobranca: "execucao", valorUnitario: valorFaxina, diaPagamento: Number(config?.diaPagamentoPadrao) || 10, contato: "" };
+        prestadores.push(faxina);
+      }
+      const lancamentos = [...dados.lancamentos];
+      preview.reservas.forEach((reserva) => {
+        const existe = lancamentos.some((l) => l.origemReservaId === reserva.id && (l.tipo === "faxina" || l.prestadorId === faxina.id));
+        if (!existe) lancamentos.push({
+          id: uid(), tipo: "faxina", previsao: true, prestadorId: faxina.id, data: reserva.checkout,
+          valor: valorFaxina, origemReservaId: reserva.id, status: "pendente",
+          descricao: `Previsão de faxina — checkout de ${reserva.hospede} (${formatDateBR(reserva.checkout)})`,
+        });
       });
-    });
-    await onImportar({
-      reservas: [...dados.reservas, ...preview.novasReservas.map(({ duplicada, ...r }) => r)],
-      repasses: [...dados.repasses, ...preview.novosRepasses], prestadores, lancamentos,
-    });
-    setImportando(false);
+      await onImportar({
+        reservas: [...dados.reservas, ...preview.novasReservas.map(({ duplicada, ...r }) => r)],
+        repasses: [...dados.repasses, ...preview.novosRepasses], prestadores, lancamentos,
+      });
+      onFechar();
+    } catch (e) {
+      confirmandoRef.current = false;
+      setImportando(false);
+      setErro("Não foi possível implantar os dados. Nada deve ser confirmado novamente antes de verificar a conexão.");
+    }
   }
 
   return (
@@ -1003,9 +1011,10 @@ function ImportarCSVAirbnb({ dados, config, onImportar, onFechar }) {
             <div className="border border-stone-200 rounded-md p-3"><p className="font-semibold">O que será implantado</p><p className="mt-2">{preview.novasReservas.length} reserva(s) nova(s) e {preview.novosRepasses.length} repasse(s) novo(s).</p><p className="mt-1 text-stone-500">Cada reserva terá uma faxina pendente de {formatBRL(valorFaxina)}. Ela aparecerá na previsão de pagamentos e não será abatida até ser marcada como paga.</p></div>
           </div>
           {preview.ajustes.length > 0 && <p className="text-xs text-amber-700"><FileWarning size={14} className="inline mr-1"/>{preview.ajustes.length} ajuste(s) do Airbnb entram somente na conciliação desta prévia; não serão cadastrados automaticamente como despesa.</p>}
+          {erro && <p className="text-sm text-rose-600">{erro}</p>}
           <div className="flex gap-2 justify-end">
             <Button variant="secondary" onClick={() => { setPreview(null); setErro(""); }}>Escolher outro arquivo</Button>
-            <Button onClick={confirmar} disabled={importando}>{importando ? "Implantando..." : "Confirmar e implantar"}</Button>
+            <Button onClick={confirmar} disabled={importando}>{importando ? "Salvando uma única vez..." : "Confirmar uma vez e fechar"}</Button>
           </div>
         </div>
       )}
