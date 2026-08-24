@@ -32,6 +32,25 @@ const KEYS = {
   metas: "metas-mensais",
 };
 
+const CONFIG_CACHE_KEY = "chale-cipo-config-cache";
+
+function readCachedConfig() {
+  try {
+    const valor = window.localStorage.getItem(CONFIG_CACHE_KEY);
+    return valor ? JSON.parse(valor) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function cacheConfig(config) {
+  try {
+    window.localStorage.setItem(CONFIG_CACHE_KEY, JSON.stringify(config));
+  } catch (_) {
+    // O cache é apenas uma otimização; o Google Sheets continua sendo a fonte oficial.
+  }
+}
+
 const DEFAULT_CONFIG = {
   pinDono: "",
   pinGestor: "",
@@ -443,11 +462,12 @@ function TelaSetupInicial({ onConcluido }) {
   );
 }
 
-function TelaLogin({ config, onEntrar }) {
+function TelaLogin({ config, onEntrar, preparando = false }) {
   const [pin, setPin] = useState("");
   const [erro, setErro] = useState("");
 
   function entrar() {
+    if (preparando) return;
     if (pin === config.pinDono) onEntrar("dono");
     else if (pin === config.pinGestor) onEntrar("gestor");
     else setErro("PIN incorreto.");
@@ -473,7 +493,9 @@ function TelaLogin({ config, onEntrar }) {
           className="text-center text-lg tracking-widest mb-3"
         />
         {erro && <p className="text-sm text-rose-600 mb-3">{erro}</p>}
-        <Button onClick={entrar} className="w-full">Entrar</Button>
+        <Button onClick={entrar} disabled={preparando} className="w-full">
+          {preparando ? <><Loader2 size={15} className="animate-spin" /> Preparando acesso...</> : "Entrar"}
+        </Button>
       </Card>
     </div>
   );
@@ -1792,9 +1814,10 @@ function ConfigView({ config, onSalvarConfig }) {
    APP RAIZ
    ========================================================================= */
 export default function App() {
-  const [carregando, setCarregando] = useState(true);
+  const configInicial = useMemo(() => readCachedConfig(), []);
+  const [carregando, setCarregando] = useState(!configInicial);
   const [erroInicial, setErroInicial] = useState("");
-  const [config, setConfig] = useState(null);
+  const [config, setConfig] = useState(configInicial);
   const [perfil, setPerfil] = useState(null);
   const [view, setView] = useState("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -1811,10 +1834,17 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        // A configuração de acesso é carregada sozinha para não competir com
-        // várias chamadas simultâneas ao Apps Script em momentos de lentidão.
-        const cfg = await loadValue(KEYS.config, DEFAULT_CONFIG, { throwOnError: true });
-        setConfig(cfg);
+        if (configInicial) {
+          // O login já pode ser usado; a confirmação no Sheets acontece sem bloquear a tela.
+          loadValue(KEYS.config, configInicial, { throwOnError: true })
+            .then((cfg) => { setConfig(cfg); cacheConfig(cfg); })
+            .catch(() => {});
+        } else {
+          const cfg = await loadValue(KEYS.config, DEFAULT_CONFIG, { throwOnError: true });
+          setConfig(cfg);
+          cacheConfig(cfg);
+          setCarregando(false);
+        }
         const r = await loadValue(KEYS.reservas, []);
         const rp = await loadValue(KEYS.repasses, []);
         const d = await loadValue(KEYS.despesas, []);
@@ -1847,16 +1877,11 @@ export default function App() {
 
   async function salvarConfig(novaConfig) {
     const ok = await saveValue(KEYS.config, novaConfig);
-    if (ok) setConfig(novaConfig);
+    if (ok) {
+      setConfig(novaConfig);
+      cacheConfig(novaConfig);
+    }
     return ok;
-  }
-
-  if (carregando) {
-    return (
-      <div className="min-h-screen bg-stone-900 flex items-center justify-center">
-        <Loader2 className="animate-spin text-emerald-500" size={32} />
-      </div>
-    );
   }
 
   if (erroInicial) {
@@ -1872,8 +1897,12 @@ export default function App() {
     );
   }
 
+  if (carregando) {
+    return <TelaLogin config={DEFAULT_CONFIG} onEntrar={() => {}} preparando />;
+  }
+
   if (!config.setupCompleto) {
-    return <TelaSetupInicial onConcluido={(cfg) => setConfig(cfg)} />;
+    return <TelaSetupInicial onConcluido={(cfg) => { setConfig(cfg); cacheConfig(cfg); }} />;
   }
 
   if (!perfil) {
