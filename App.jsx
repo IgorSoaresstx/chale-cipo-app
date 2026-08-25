@@ -1847,6 +1847,7 @@ export default function App() {
   const [view, setView] = useState("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toast, setToast] = useState(null);
+  const filaPersistenciaRef = React.useRef(Promise.resolve());
 
   const [reservas, setReservas] = useState(dadosIniciais.reservas);
   const [repasses, setRepasses] = useState(dadosIniciais.repasses);
@@ -1897,11 +1898,17 @@ export default function App() {
     const setters = { reservas: setReservas, repasses: setRepasses, despesas: setDespesas, prestadores: setPrestadores, lancamentos: setLancamentos, manutencao: setManutencao, metas: setMetas };
     const keysMap = { reservas: KEYS.reservas, repasses: KEYS.repasses, despesas: KEYS.despesas, prestadores: KEYS.prestadores, lancamentos: KEYS.lancamentos, manutencao: KEYS.manutencao, metas: KEYS.metas };
     cacheData({ ...readCachedData(), ...parcial });
-    for (const campo of Object.keys(parcial)) {
-      setters[campo](parcial[campo]);
-      const ok = await saveValue(keysMap[campo], parcial[campo]);
-      if (!ok) setToast("Não consegui salvar — tente de novo.");
-    }
+    // Atualiza toda a interface antes de iniciar a sincronização remota. As
+    // gravações entram numa fila única para uma importação nunca sobrescrever outra.
+    Object.keys(parcial).forEach((campo) => setters[campo](parcial[campo]));
+    const persistir = async () => {
+      for (const campo of Object.keys(parcial)) {
+        const ok = await saveValue(keysMap[campo], parcial[campo]);
+        if (!ok) setToast("Não consegui salvar — tente de novo.");
+      }
+    };
+    filaPersistenciaRef.current = filaPersistenciaRef.current.then(persistir, persistir);
+    await filaPersistenciaRef.current;
   }, []);
 
   async function salvarConfig(novaConfig) {
