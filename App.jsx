@@ -33,6 +33,8 @@ const KEYS = {
 };
 
 const CONFIG_CACHE_KEY = "chale-cipo-config-cache";
+const DATA_CACHE_KEY = "chale-cipo-data-cache";
+const EMPTY_DATA = { reservas: [], repasses: [], despesas: [], prestadores: [], lancamentos: [], manutencao: [], metas: [] };
 
 function readCachedConfig() {
   try {
@@ -48,6 +50,23 @@ function cacheConfig(config) {
     window.localStorage.setItem(CONFIG_CACHE_KEY, JSON.stringify(config));
   } catch (_) {
     // O cache é apenas uma otimização; o Google Sheets continua sendo a fonte oficial.
+  }
+}
+
+function readCachedData() {
+  try {
+    const valor = window.localStorage.getItem(DATA_CACHE_KEY);
+    return valor ? { ...EMPTY_DATA, ...JSON.parse(valor) } : EMPTY_DATA;
+  } catch (_) {
+    return EMPTY_DATA;
+  }
+}
+
+function cacheData(data) {
+  try {
+    window.localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(data));
+  } catch (_) {
+    // O Google Sheets continua sendo a fonte oficial se o cache for bloqueado.
   }
 }
 
@@ -1820,6 +1839,7 @@ function ConfigView({ config, onSalvarConfig }) {
    ========================================================================= */
 export default function App() {
   const configInicial = useMemo(() => readCachedConfig(), []);
+  const dadosIniciais = useMemo(() => readCachedData(), []);
   const [carregando, setCarregando] = useState(!configInicial);
   const [erroInicial, setErroInicial] = useState("");
   const [config, setConfig] = useState(configInicial);
@@ -1828,13 +1848,13 @@ export default function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toast, setToast] = useState(null);
 
-  const [reservas, setReservas] = useState([]);
-  const [repasses, setRepasses] = useState([]);
-  const [despesas, setDespesas] = useState([]);
-  const [prestadores, setPrestadores] = useState([]);
-  const [lancamentos, setLancamentos] = useState([]);
-  const [manutencao, setManutencao] = useState([]);
-  const [metas, setMetas] = useState([]);
+  const [reservas, setReservas] = useState(dadosIniciais.reservas);
+  const [repasses, setRepasses] = useState(dadosIniciais.repasses);
+  const [despesas, setDespesas] = useState(dadosIniciais.despesas);
+  const [prestadores, setPrestadores] = useState(dadosIniciais.prestadores);
+  const [lancamentos, setLancamentos] = useState(dadosIniciais.lancamentos);
+  const [manutencao, setManutencao] = useState(dadosIniciais.manutencao);
+  const [metas, setMetas] = useState(dadosIniciais.metas);
 
   useEffect(() => {
     (async () => {
@@ -1850,15 +1870,18 @@ export default function App() {
           cacheConfig(cfg);
           setCarregando(false);
         }
-        const r = await loadValue(KEYS.reservas, []);
-        const rp = await loadValue(KEYS.repasses, []);
-        const d = await loadValue(KEYS.despesas, []);
-        const p = await loadValue(KEYS.prestadores, []);
-        const l = await loadValue(KEYS.lancamentos, []);
-        const m = await loadValue(KEYS.manutencao, []);
-        const mt = await loadValue(KEYS.metas, []);
+        const [r, rp, d, p, l, m, mt] = await Promise.all([
+          loadValue(KEYS.reservas, dadosIniciais.reservas),
+          loadValue(KEYS.repasses, dadosIniciais.repasses),
+          loadValue(KEYS.despesas, dadosIniciais.despesas),
+          loadValue(KEYS.prestadores, dadosIniciais.prestadores),
+          loadValue(KEYS.lancamentos, dadosIniciais.lancamentos),
+          loadValue(KEYS.manutencao, dadosIniciais.manutencao),
+          loadValue(KEYS.metas, dadosIniciais.metas),
+        ]);
         setReservas(r); setRepasses(rp); setDespesas(d);
         setPrestadores(p); setLancamentos(l); setManutencao(m); setMetas(mt);
+        cacheData({ reservas: r, repasses: rp, despesas: d, prestadores: p, lancamentos: l, manutencao: m, metas: mt });
       } catch (e) {
         setErroInicial("Não foi possível carregar a configuração compartilhada. Verifique a conexão e tente novamente.");
       } finally {
@@ -1873,6 +1896,7 @@ export default function App() {
   const atualizar = useCallback(async (parcial) => {
     const setters = { reservas: setReservas, repasses: setRepasses, despesas: setDespesas, prestadores: setPrestadores, lancamentos: setLancamentos, manutencao: setManutencao, metas: setMetas };
     const keysMap = { reservas: KEYS.reservas, repasses: KEYS.repasses, despesas: KEYS.despesas, prestadores: KEYS.prestadores, lancamentos: KEYS.lancamentos, manutencao: KEYS.manutencao, metas: KEYS.metas };
+    cacheData({ ...readCachedData(), ...parcial });
     for (const campo of Object.keys(parcial)) {
       setters[campo](parcial[campo]);
       const ok = await saveValue(keysMap[campo], parcial[campo]);
