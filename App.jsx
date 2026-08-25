@@ -810,7 +810,7 @@ function DashboardView({ dados, perfil }) {
   const receitaBruta = reservasMes.reduce((s, r) => s + (Number(r.valorBruto) || 0), 0);
   const esperadoMes = reservasMes.reduce((s, r) => s + valorLiquidoReserva(r), 0);
   const repassadoMes = repasses.filter((p) => monthKey(p.data) === mesAtual).reduce((s, p) => s + (Number(p.valor) || 0), 0);
-  const despesasMes = despesas.filter((d) => monthKey(d.data) === mesAtual).reduce((s, d) => s + (Number(d.valor) || 0), 0);
+  const despesasMes = despesas.filter((d) => d.statusPagamento !== "pendente" && monthKey(d.dataPagamento || d.data) === mesAtual).reduce((s, d) => s + (Number(d.valor) || 0), 0);
   const pagamentosPagosMes = lancamentos.filter((l) => l.status === "pago" && monthKey(l.dataPagamento) === mesAtual)
     .reduce((s, l) => s + (Number(l.valor) || 0), 0);
   const lucroLiquido = repassadoMes - despesasMes - pagamentosPagosMes;
@@ -1290,7 +1290,7 @@ function RepassesView({ dados, atualizar }) {
    DESPESAS
    ========================================================================= */
 function FormDespesa({ inicial, onSalvar, onCancelar }) {
-  const [form, setForm] = useState(inicial || { categoria: "Outros", recorrente: false, valor: 0, data: todayISO(), quemPagou: "Você", observacao: "", comprovanteNome: "" });
+  const [form, setForm] = useState(inicial || { categoria: "Outros", recorrente: false, valor: 0, data: todayISO(), statusPagamento: "paga", dataPagamento: todayISO(), quemPagou: "Você", observacao: "", comprovanteNome: "" });
   return (
     <div>
       <ReceiptUploader
@@ -1316,6 +1316,14 @@ function FormDespesa({ inicial, onSalvar, onCancelar }) {
             <option>Você</option><option>Gestor (descontado do repasse)</option>
           </Select>
         </Field>
+        <Field label="Situação">
+          <Select value={form.statusPagamento || "paga"} onChange={(e) => setForm({ ...form, statusPagamento: e.target.value, dataPagamento: e.target.value === "paga" ? (form.dataPagamento || todayISO()) : "" })}>
+            <option value="paga">Paga</option><option value="pendente">Pendente</option>
+          </Select>
+        </Field>
+        {form.statusPagamento !== "pendente" && <Field label="Data do pagamento">
+          <Input type="date" value={form.dataPagamento || form.data} onChange={(e) => setForm({ ...form, dataPagamento: e.target.value })} />
+        </Field>}
       </div>
       <Field label="Recorrente?">
         <label className="flex items-center gap-2 text-sm">
@@ -1350,12 +1358,34 @@ function DespesasView({ dados, atualizar }) {
     await atualizar({ despesas: dados.despesas.filter((d) => d.id !== id) });
   }
 
+  async function marcarComoPaga(id) {
+    const lista = dados.despesas.map((d) => d.id === id ? { ...d, statusPagamento: "paga", dataPagamento: todayISO() } : d);
+    await atualizar({ despesas: lista });
+  }
+
+  function exportarExcel() {
+    const cabecalho = ["Data da despesa", "Categoria", "Valor", "Situação", "Data do pagamento", "Quem pagou", "Recorrente", "Observação"];
+    const escapar = (valor) => `"${String(valor ?? "").replace(/"/g, '""')}"`;
+    const linhas = dados.despesas.map((d) => [
+      formatDateBR(d.data), d.categoria, Number(d.valor || 0).toFixed(2).replace(".", ","),
+      d.statusPagamento === "pendente" ? "Pendente" : "Paga", formatDateBR(d.dataPagamento),
+      d.quemPagou, d.recorrente ? "Sim" : "Não", d.observacao,
+    ]);
+    const csv = "\uFEFF" + [cabecalho, ...linhas].map((linha) => linha.map(escapar).join(";")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `despesas-chale-${todayISO()}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   const ordenadas = [...dados.despesas].sort((a, b) => (a.data < b.data ? 1 : -1));
 
   return (
     <div>
       <SectionTitle icon={Receipt} title="Despesas" subtitle="Jardinagem, faxina, manutenção e outras"
-        action={<Button onClick={() => { setEditando(null); setModalAberto(true); }}><Plus size={15} /> Nova</Button>} />
+        action={<div className="flex gap-2"><Button variant="secondary" onClick={exportarExcel} disabled={dados.despesas.length === 0}><Upload size={15} /> Exportar Excel</Button><Button onClick={() => { setEditando(null); setModalAberto(true); }}><Plus size={15} /> Nova</Button></div>} />
       {ordenadas.length === 0 ? (
         <EmptyState icon={Receipt} title="Nenhuma despesa registrada" />
       ) : (
@@ -1367,9 +1397,11 @@ function DespesasView({ dados, atualizar }) {
                 <div>
                   <p className="font-mono font-semibold text-stone-800">{formatBRL(d.valor)}</p>
                   <p className="text-xs text-stone-500">{formatDateBR(d.data)} · {d.quemPagou}{d.recorrente ? " · recorrente" : ""}</p>
+                  <div className="mt-1"><Badge tone={d.statusPagamento === "pendente" ? "amber" : "emerald"}>{d.statusPagamento === "pendente" ? "Pendente" : "Paga"}</Badge></div>
                 </div>
               </div>
               <div>
+                {d.statusPagamento === "pendente" && <Button variant="secondary" onClick={() => marcarComoPaga(d.id)}>Marcar como paga</Button>}
                 <button onClick={() => { setEditando(d); setModalAberto(true); }} className="text-stone-400 hover:text-emerald-700 p-1"><Pencil size={15} /></button>
                 <button onClick={() => excluir(d.id)} className="text-stone-400 hover:text-rose-600 p-1"><Trash2 size={15} /></button>
               </div>
@@ -1572,7 +1604,7 @@ function calcularDREPeriodo(inicio, fim, dados) {
   const receitaBruta = reservasMes.reduce((s, r) => s + (Number(r.valorBruto) || 0), 0);
   const taxaPlataforma = reservasMes.reduce((s, r) => s + (Number(r.taxaPlataforma) || 0), 0);
   const repassadoMes = repasses.filter((p) => noPeriodo(p.data)).reduce((s, p) => s + (Number(p.valor) || 0), 0);
-  const despesasMes = despesas.filter((d) => noPeriodo(d.data)).reduce((s, d) => s + (Number(d.valor) || 0), 0);
+  const despesasMes = despesas.filter((d) => d.statusPagamento !== "pendente" && noPeriodo(d.dataPagamento || d.data)).reduce((s, d) => s + (Number(d.valor) || 0), 0);
   const pagamentosMes = lancamentos.filter((l) => l.status === "pago" && noPeriodo(l.dataPagamento)).reduce((s, l) => s + (Number(l.valor) || 0), 0);
   const lucroLiquido = repassadoMes - despesasMes - pagamentosMes;
   const margem = receitaBruta > 0 ? (lucroLiquido / receitaBruta) * 100 : 0;
