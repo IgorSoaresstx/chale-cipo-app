@@ -1100,9 +1100,9 @@ function ReservasView({ dados, atualizar, perfil, config }) {
       const novos = gerarLancamentosAutomaticos(reservaSalva, dados.prestadores, dados.lancamentos);
       if (novos.length) lancamentos = [...dados.lancamentos, ...novos];
     }
-    await atualizar({ reservas: lista, lancamentos });
     setModalAberto(false);
     setEditando(null);
+    await atualizar({ reservas: lista, lancamentos });
   }
 
   async function excluir(id) {
@@ -1245,8 +1245,8 @@ function RepassesView({ dados, atualizar }) {
     let lista = [...dados.repasses];
     if (editando && editando.id) lista = lista.map((r) => (r.id === editando.id ? { ...editando, ...form } : r));
     else lista.push({ ...form, id: uid() });
-    await atualizar({ repasses: lista });
     setModalAberto(false); setEditando(null);
+    await atualizar({ repasses: lista });
   }
 
   async function excluir(id) {
@@ -1349,8 +1349,8 @@ function DespesasView({ dados, atualizar }) {
     let lista = [...dados.despesas];
     if (editando && editando.id) lista = lista.map((d) => (d.id === editando.id ? { ...editando, ...form } : d));
     else lista.push({ ...form, id: uid() });
-    await atualizar({ despesas: lista });
     setModalAberto(false); setEditando(null);
+    await atualizar({ despesas: lista });
   }
 
   async function excluir(id) {
@@ -1491,8 +1491,8 @@ function PrestadoresView({ dados, atualizar }) {
     let lista = [...dados.prestadores];
     if (editando && editando.id) lista = lista.map((p) => (p.id === editando.id ? { ...editando, ...form } : p));
     else lista.push({ ...form, id: uid() });
-    await atualizar({ prestadores: lista });
     setModalAberto(false); setEditando(null);
+    await atualizar({ prestadores: lista });
   }
 
   async function excluir(id) {
@@ -1511,8 +1511,8 @@ function PrestadoresView({ dados, atualizar }) {
   async function confirmarPagamento(comprovanteNome) {
     const ids = pagamentoSelecionado.lancamentos.map((l) => l.id);
     const lista = dados.lancamentos.map((l) => ids.includes(l.id) ? { ...l, status: "pago", dataPagamento: todayISO(), comprovanteNome } : l);
-    await atualizar({ lancamentos: lista });
     setPagamentoSelecionado(null);
+    await atualizar({ lancamentos: lista });
   }
 
   return (
@@ -1822,8 +1822,8 @@ function ManutencaoView({ dados, atualizar }) {
     let lista = [...dados.manutencao];
     if (editando && editando.id) lista = lista.map((m) => (m.id === editando.id ? { ...editando, ...form } : m));
     else lista.push({ ...form, id: uid() });
-    await atualizar({ manutencao: lista });
     setModalAberto(false); setEditando(null);
+    await atualizar({ manutencao: lista });
   }
 
   async function excluir(id) {
