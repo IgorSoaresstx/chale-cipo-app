@@ -1543,22 +1543,40 @@ function PrestadoresView({ dados, atualizar }) {
 /* =========================================================================
    ANÁLISE FINANCEIRA (DRE mensal + comparativo por período)
    ========================================================================= */
-function calcularDREdoMes(mes, dados) {
+function calcularDREPeriodo(inicio, fim, dados) {
   const { reservas, repasses, despesas, lancamentos } = dados;
-  const reservasMes = reservas.filter((r) => mesPagamentoReserva(r) === mes && r.status !== "Cancelada");
+  const noPeriodo = (data) => data && data >= inicio && data <= fim;
+  const reservasMes = reservas.filter((r) => noPeriodo(r.dataPagamentoAirbnb || r.dataPagamento || r.checkout || r.checkin) && r.status !== "Cancelada");
   const receitaBruta = reservasMes.reduce((s, r) => s + (Number(r.valorBruto) || 0), 0);
   const taxaPlataforma = reservasMes.reduce((s, r) => s + (Number(r.taxaPlataforma) || 0), 0);
-  const repassadoMes = repasses.filter((p) => monthKey(p.data) === mes).reduce((s, p) => s + (Number(p.valor) || 0), 0);
-  const despesasMes = despesas.filter((d) => monthKey(d.data) === mes).reduce((s, d) => s + (Number(d.valor) || 0), 0);
-  const pagamentosMes = lancamentos.filter((l) => l.status === "pago" && monthKey(l.dataPagamento) === mes).reduce((s, l) => s + (Number(l.valor) || 0), 0);
+  const repassadoMes = repasses.filter((p) => noPeriodo(p.data)).reduce((s, p) => s + (Number(p.valor) || 0), 0);
+  const despesasMes = despesas.filter((d) => noPeriodo(d.data)).reduce((s, d) => s + (Number(d.valor) || 0), 0);
+  const pagamentosMes = lancamentos.filter((l) => l.status === "pago" && noPeriodo(l.dataPagamento)).reduce((s, l) => s + (Number(l.valor) || 0), 0);
   const lucroLiquido = repassadoMes - despesasMes - pagamentosMes;
   const margem = receitaBruta > 0 ? (lucroLiquido / receitaBruta) * 100 : 0;
   return { receitaBruta, taxaPlataforma, repassadoMes, despesasMes, pagamentosMes, lucroLiquido, margem };
 }
 
+function calcularDREdoMes(mes, dados) {
+  const [ano, numeroMes] = mes.split("-").map(Number);
+  const ultimoDia = new Date(ano, numeroMes, 0).getDate();
+  return calcularDREPeriodo(`${mes}-01`, `${mes}-${String(ultimoDia).padStart(2, "0")}`, dados);
+}
+
 function AnaliseFinanceiraView({ dados, atualizar }) {
   const [mesSelecionado, setMesSelecionado] = useState(monthKey(todayISO()));
-  const dre = calcularDREdoMes(mesSelecionado, dados);
+  const [tipoPeriodo, setTipoPeriodo] = useState("mes");
+  const [anoSelecionado, setAnoSelecionado] = useState(todayISO().slice(0, 4));
+  const [dataInicio, setDataInicio] = useState(`${todayISO().slice(0, 4)}-01-01`);
+  const [dataFim, setDataFim] = useState(todayISO());
+  const [anoMes, numeroMes] = mesSelecionado.split("-").map(Number);
+  const ultimoDiaMes = new Date(anoMes, numeroMes, 0).getDate();
+  const periodo = tipoPeriodo === "mes"
+    ? { inicio: `${mesSelecionado}-01`, fim: `${mesSelecionado}-${String(ultimoDiaMes).padStart(2, "0")}`, titulo: nomeMes(mesSelecionado) }
+    : tipoPeriodo === "ano"
+      ? { inicio: `${anoSelecionado}-01-01`, fim: `${anoSelecionado}-12-31`, titulo: `Ano de ${anoSelecionado}` }
+      : { inicio: dataInicio, fim: dataFim, titulo: `${formatDateBR(dataInicio)} a ${formatDateBR(dataFim)}` };
+  const dre = calcularDREPeriodo(periodo.inicio, periodo.fim, dados);
   const meses12 = ultimosNMeses(12);
   const serieGrafico = meses12.map((m) => {
     const d = calcularDREdoMes(m, dados);
@@ -1579,8 +1597,16 @@ function AnaliseFinanceiraView({ dados, atualizar }) {
     <div>
       <SectionTitle icon={BarChart3} title="Análise financeira" subtitle="DRE mensal e comparativo por período" />
 
-      <div className="flex items-center gap-2 mb-4">
-        <Button variant="secondary" onClick={() => {
+      <div className="mb-4 flex flex-wrap items-end gap-3">
+        <Field label="Visualizar por">
+          <Select value={tipoPeriodo} onChange={(e) => setTipoPeriodo(e.target.value)} className="min-w-44">
+            <option value="mes">Mês</option>
+            <option value="ano">Ano inteiro</option>
+            <option value="personalizado">Período personalizado</option>
+          </Select>
+        </Field>
+        {tipoPeriodo === "mes" && <div className="flex items-center gap-2 mb-3">
+          <Button variant="secondary" onClick={() => {
           const [y, m] = mesSelecionado.split("-").map(Number);
           const d = new Date(y, m - 2, 1);
           setMesSelecionado(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
@@ -1591,10 +1617,16 @@ function AnaliseFinanceiraView({ dados, atualizar }) {
           const d = new Date(y, m, 1);
           setMesSelecionado(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
         }}><ChevronRight size={15} /></Button>
+        </div>}
+        {tipoPeriodo === "ano" && <Field label="Ano"><Input type="number" min="2000" max="2100" value={anoSelecionado} onChange={(e) => setAnoSelecionado(e.target.value.replace(/\D/g, "").slice(0, 4))} className="w-32" /></Field>}
+        {tipoPeriodo === "personalizado" && <>
+          <Field label="Data inicial"><Input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} /></Field>
+          <Field label="Data final"><Input type="date" value={dataFim} min={dataInicio} onChange={(e) => setDataFim(e.target.value)} /></Field>
+        </>}
       </div>
 
       <Card className="p-4 mb-6">
-        <h3 className="font-serif font-semibold text-stone-800 mb-3">DRE — {nomeMes(mesSelecionado)}</h3>
+        <h3 className="font-serif font-semibold text-stone-800 mb-3">DRE — {periodo.titulo}</h3>
         <table className="w-full text-sm font-mono">
           <tbody>
             <tr className="border-b border-stone-100"><td className="py-1.5">Receita bruta</td><td className="py-1.5 text-right">{formatBRL(dre.receitaBruta)}</td></tr>
@@ -1602,13 +1634,13 @@ function AnaliseFinanceiraView({ dados, atualizar }) {
             <tr className="border-b border-stone-100 text-stone-500"><td className="py-1.5">(−) Despesas</td><td className="py-1.5 text-right">{formatBRL(dre.despesasMes)}</td></tr>
             <tr className="border-b border-stone-100 text-stone-500"><td className="py-1.5">(−) Pagamentos a prestadores (inclui comissão)</td><td className="py-1.5 text-right">{formatBRL(dre.pagamentosMes)}</td></tr>
             <tr className="border-b border-stone-200"><td className="py-1.5 text-stone-500">Repassado pelo gestor</td><td className="py-1.5 text-right">{formatBRL(dre.repassadoMes)}</td></tr>
-            <tr className="font-semibold text-base"><td className="py-2">Lucro líquido do mês</td><td className={`py-2 text-right ${dre.lucroLiquido >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{formatBRL(dre.lucroLiquido)}</td></tr>
+            <tr className="font-semibold text-base"><td className="py-2">Lucro líquido do período</td><td className={`py-2 text-right ${dre.lucroLiquido >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{formatBRL(dre.lucroLiquido)}</td></tr>
             <tr className="text-xs text-stone-400"><td className="py-1">Margem líquida</td><td className="py-1 text-right">{dre.margem.toFixed(1)}%</td></tr>
           </tbody>
         </table>
       </Card>
 
-      <Card className="p-4 mb-6">
+      {tipoPeriodo === "mes" && <Card className="p-4 mb-6">
         <h3 className="font-serif font-semibold text-stone-800 mb-3">Meta de lucro do mês</h3>
         <div className="flex items-center gap-3">
           <MoneyInput value={metaForm} onChange={setMetaForm} />
@@ -1622,7 +1654,7 @@ function AnaliseFinanceiraView({ dados, atualizar }) {
             </span>
           </p>
         )}
-      </Card>
+      </Card>}
 
       <Card className="p-4">
         <h3 className="font-serif font-semibold text-stone-800 mb-3">Lucro líquido — últimos 12 meses</h3>
