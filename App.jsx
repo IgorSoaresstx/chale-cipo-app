@@ -630,7 +630,7 @@ function calcularAlertasInteligentes({ reservas, repasses, prestadores, lancamen
 
   // 1) Divergência repasse x esperado (mês atual)
   const mesAtual = monthKey(hoje);
-  const reservasMes = reservas.filter((r) => monthKey(r.checkin) === mesAtual && r.status !== "Cancelada");
+  const reservasMes = reservas.filter((r) => mesPagamentoReserva(r) === mesAtual && r.status !== "Cancelada");
   const esperadoMes = reservasMes.reduce((s, r) => s + valorLiquidoReserva(r), 0);
   const repassadoMes = repasses.filter((p) => monthKey(p.data) === mesAtual).reduce((s, p) => s + (Number(p.valor) || 0), 0);
   const diferenca = esperadoMes - repassadoMes;
@@ -728,7 +728,7 @@ function calcularAlertasInteligentes({ reservas, repasses, prestadores, lancamen
   // 8) Comparação com mesmo mês do ano anterior (sazonalidade)
   const [ano, mes] = mesAtual.split("-");
   const mesAnoAnterior = `${parseInt(ano, 10) - 1}-${mes}`;
-  const reservasAnoAnterior = reservas.filter((r) => monthKey(r.checkin) === mesAnoAnterior && r.status !== "Cancelada");
+  const reservasAnoAnterior = reservas.filter((r) => mesPagamentoReserva(r) === mesAnoAnterior && r.status !== "Cancelada");
   if (reservasAnoAnterior.length > 0) {
     const receitaAnoAnterior = reservasAnoAnterior.reduce((s, r) => s + valorLiquidoReserva(r), 0);
     const receitaAtual = esperadoMes;
@@ -785,7 +785,7 @@ function DashboardView({ dados, perfil }) {
   const hoje = todayISO();
   const mesAtual = monthKey(hoje);
 
-  const reservasMes = reservas.filter((r) => monthKey(r.checkin) === mesAtual && r.status !== "Cancelada");
+  const reservasMes = reservas.filter((r) => mesPagamentoReserva(r) === mesAtual && r.status !== "Cancelada");
   const receitaBruta = reservasMes.reduce((s, r) => s + (Number(r.valorBruto) || 0), 0);
   const esperadoMes = reservasMes.reduce((s, r) => s + valorLiquidoReserva(r), 0);
   const repassadoMes = repasses.filter((p) => monthKey(p.data) === mesAtual).reduce((s, p) => s + (Number(p.valor) || 0), 0);
@@ -1526,7 +1526,7 @@ function PrestadoresView({ dados, atualizar }) {
    ========================================================================= */
 function calcularDREdoMes(mes, dados) {
   const { reservas, repasses, despesas, lancamentos } = dados;
-  const reservasMes = reservas.filter((r) => monthKey(r.checkin) === mes && r.status !== "Cancelada");
+  const reservasMes = reservas.filter((r) => mesPagamentoReserva(r) === mes && r.status !== "Cancelada");
   const receitaBruta = reservasMes.reduce((s, r) => s + (Number(r.valorBruto) || 0), 0);
   const taxaPlataforma = reservasMes.reduce((s, r) => s + (Number(r.taxaPlataforma) || 0), 0);
   const repassadoMes = repasses.filter((p) => monthKey(p.data) === mes).reduce((s, p) => s + (Number(p.valor) || 0), 0);
