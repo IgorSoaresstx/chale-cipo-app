@@ -25,6 +25,7 @@ const KEYS = {
   config: "config",
   reservas: "reservas",
   repasses: "repasses",
+  transferencias: "transferencias-proprietario",
   despesas: "despesas",
   prestadores: "prestadores",
   lancamentos: "lancamentos-prestadores",
@@ -34,7 +35,7 @@ const KEYS = {
 
 const CONFIG_CACHE_KEY = "chale-cipo-config-cache";
 const DATA_CACHE_KEY = "chale-cipo-data-cache";
-const EMPTY_DATA = { reservas: [], repasses: [], despesas: [], prestadores: [], lancamentos: [], manutencao: [], metas: [] };
+const EMPTY_DATA = { reservas: [], repasses: [], transferencias: [], despesas: [], prestadores: [], lancamentos: [], manutencao: [], metas: [] };
 
 function readCachedConfig() {
   try {
@@ -534,7 +535,7 @@ const MENU_ITEMS = [
   { id: "financeiro", label: "Análise financeira", icon: BarChart3, donoOnly: true },
   { id: "calendario", label: "Calendário", icon: CalendarDays, donoOnly: false },
   { id: "reservas", label: "Reservas", icon: ClipboardList, donoOnly: false },
-  { id: "repasses", label: "Repasses", icon: Wallet, donoOnly: false },
+  { id: "repasses", label: "Acerto Cíntia", icon: Wallet, donoOnly: false },
   { id: "despesas", label: "Despesas", icon: Receipt, donoOnly: false },
   { id: "prestadores", label: "Prestadores", icon: Users, donoOnly: true },
   { id: "manutencao", label: "Manutenção", icon: Wrench, donoOnly: false },
@@ -835,7 +836,7 @@ function DashboardView({ dados, perfil }) {
         <SectionTitle icon={Home} title="Painel" subtitle={`Visão operacional — ${nomeMes(mesAtual)}`} />
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
           <CardKPI label="Reservas no mês" valor={reservasMes.length} icon={ClipboardList} />
-          <CardKPI label="Repassado no mês" valor={formatBRL(repassadoMes)} icon={Wallet} tone="emerald" />
+          <CardKPI label="Recebido do Airbnb" valor={formatBRL(repassadoMes)} icon={Wallet} tone="emerald" />
           <CardKPI label="Confirmadas (futuras)" valor={reservasConfirmadas.length} icon={CalendarDays} />
         </div>
         <h3 className="font-serif font-semibold text-stone-800 mb-2">Avisos</h3>
@@ -855,7 +856,7 @@ function DashboardView({ dados, perfil }) {
       <SectionTitle icon={Home} title="Painel" subtitle={`Visão geral — ${nomeMes(mesAtual)}`} />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <CardKPI label="Receita bruta" valor={formatBRL(receitaBruta)} icon={TrendingUp} />
-        <CardKPI label="Repassado a você" valor={formatBRL(repassadoMes)} icon={Wallet} tone="emerald" />
+        <CardKPI label="Airbnb recebido pela Cíntia" valor={formatBRL(repassadoMes)} icon={Wallet} tone="emerald" />
         <CardKPI
           label="Diferença (esperado x repassado)"
           valor={formatBRL(Math.abs(esperadoMes - repassadoMes))}
@@ -1187,13 +1188,8 @@ function ReservasView({ dados, atualizar, perfil, config }) {
 /* =========================================================================
    REPASSES DO GESTOR
    ========================================================================= */
-function FormRepasse({ inicial, reservas, onSalvar, onCancelar }) {
-  const [form, setForm] = useState(inicial || { data: todayISO(), valor: 0, reservasVinculadas: [], observacao: "", comprovanteNome: "" });
-
-  function toggleReserva(id) {
-    const atual = form.reservasVinculadas || [];
-    setForm({ ...form, reservasVinculadas: atual.includes(id) ? atual.filter((x) => x !== id) : [...atual, id] });
-  }
+function FormRepasse({ inicial, onSalvar, onCancelar }) {
+  const [form, setForm] = useState(inicial || { data: todayISO(), valor: 0, observacao: "", comprovanteNome: "" });
 
   return (
     <div>
@@ -1208,26 +1204,15 @@ function FormRepasse({ inicial, reservas, onSalvar, onCancelar }) {
         })}
       />
       <div className="grid grid-cols-2 gap-x-3 mt-3">
-        <Field label="Data do depósito">
+        <Field label="Data em que você recebeu">
           <Input type="date" value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} />
         </Field>
-        <Field label="Valor depositado">
+        <Field label="Valor líquido recebido">
           <MoneyInput value={form.valor} onChange={(v) => setForm({ ...form, valor: v })} />
         </Field>
       </div>
       <Field label="Observação">
-        <Input value={form.observacao} onChange={(e) => setForm({ ...form, observacao: e.target.value })} />
-      </Field>
-      <Field label="Reservas vinculadas a este repasse">
-        <div className="max-h-40 overflow-y-auto border border-stone-200 rounded-md p-2 space-y-1">
-          {reservas.length === 0 && <p className="text-xs text-stone-400">Nenhuma reserva cadastrada ainda.</p>}
-          {reservas.map((r) => (
-            <label key={r.id} className="flex items-center gap-2 text-sm py-0.5">
-              <input type="checkbox" checked={(form.reservasVinculadas || []).includes(r.id)} onChange={() => toggleReserva(r.id)} />
-              {r.hospede || "Reserva"} — {formatDateBR(r.checkin)} ({formatBRL(valorLiquidoReserva(r))})
-            </label>
-          ))}
-        </div>
+        <Input value={form.observacao} onChange={(e) => setForm({ ...form, observacao: e.target.value })} placeholder="Ex.: transferência da Cíntia referente ao mês" />
       </Field>
       <div className="flex gap-2 justify-end mt-3">
         <Button variant="secondary" onClick={onCancelar}>Cancelar</Button>
@@ -1242,33 +1227,47 @@ function RepassesView({ dados, atualizar }) {
   const [editando, setEditando] = useState(null);
 
   async function salvar(form) {
-    let lista = [...dados.repasses];
+    let lista = [...dados.transferencias];
     if (editando && editando.id) lista = lista.map((r) => (r.id === editando.id ? { ...editando, ...form } : r));
     else lista.push({ ...form, id: uid() });
     setModalAberto(false); setEditando(null);
-    await atualizar({ repasses: lista });
+    await atualizar({ transferencias: lista });
   }
 
   async function excluir(id) {
-    if (!confirm("Excluir este repasse?")) return;
-    await atualizar({ repasses: dados.repasses.filter((r) => r.id !== id) });
+    if (!confirm("Excluir esta transferência recebida?")) return;
+    await atualizar({ transferencias: dados.transferencias.filter((r) => r.id !== id) });
   }
 
-  const ordenados = [...dados.repasses].sort((a, b) => (a.data < b.data ? 1 : -1));
+  const ordenados = [...dados.transferencias].sort((a, b) => (a.data < b.data ? 1 : -1));
+  const recebidoAirbnb = dados.repasses.reduce((s, r) => s + (Number(r.valor) || 0), 0);
+  const despesasCintia = dados.despesas.filter((d) => d.statusPagamento !== "pendente" && (String(d.quemPagou || "").includes("Cíntia") || String(d.quemPagou || "").includes("Gestor"))).reduce((s, d) => s + (Number(d.valor) || 0), 0);
+  const prestadoresPagos = dados.lancamentos.filter((l) => l.status === "pago").reduce((s, l) => s + (Number(l.valor) || 0), 0);
+  const liquidoARepassar = recebidoAirbnb - despesasCintia - prestadoresPagos;
+  const recebidoProprietario = dados.transferencias.reduce((s, r) => s + (Number(r.valor) || 0), 0);
+  const saldoAReceber = liquidoARepassar - recebidoProprietario;
 
   return (
     <div>
-      <SectionTitle icon={Wallet} title="Repasses do gestor" subtitle="Dinheiro que de fato caiu na sua conta"
-        action={<Button onClick={() => { setEditando(null); setModalAberto(true); }}><Plus size={15} /> Novo</Button>} />
+      <SectionTitle icon={Wallet} title="Acerto com a Cíntia" subtitle="Dinheiro do Airbnb, pagamentos feitos por ela e transferências para você"
+        action={<Button onClick={() => { setEditando(null); setModalAberto(true); }}><Plus size={15} /> Registrar valor recebido</Button>} />
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-6">
+        <MetricCard label="Airbnb → Cíntia" value={formatBRL(recebidoAirbnb)} sub={`${dados.repasses.length} depósito(s)`} />
+        <MetricCard label="Despesas da Cíntia" value={formatBRL(despesasCintia + prestadoresPagos)} sub="Despesas e prestadores" />
+        <MetricCard label="Líquido a transferir" value={formatBRL(liquidoARepassar)} sub="Entradas menos pagamentos" />
+        <MetricCard label="Você já recebeu" value={formatBRL(recebidoProprietario)} sub={`${dados.transferencias.length} transferência(s)`} />
+        <MetricCard label="Saldo a receber" value={formatBRL(saldoAReceber)} sub={saldoAReceber <= 0 ? "Acerto concluído" : "Ainda devido pela Cíntia"} />
+      </div>
+      <h3 className="font-serif font-semibold text-stone-800 mb-3">Transferências da Cíntia para você</h3>
       {ordenados.length === 0 ? (
-        <EmptyState icon={Wallet} title="Nenhum repasse registrado" />
+        <EmptyState icon={Wallet} title="Nenhuma transferência recebida registrada" />
       ) : (
         <div className="space-y-2">
           {ordenados.map((r) => (
             <Card key={r.id} className="p-3 flex items-center justify-between">
               <div>
                 <p className="font-mono font-semibold text-stone-800">{formatBRL(r.valor)}</p>
-                <p className="text-xs text-stone-500">{formatDateBR(r.data)} · {(r.reservasVinculadas || []).length} reserva(s) vinculada(s)</p>
+                <p className="text-xs text-stone-500">Recebido em {formatDateBR(r.data)}</p>
                 {r.observacao && <p className="text-xs text-stone-400 mt-0.5">{r.observacao}</p>}
               </div>
               <div>
@@ -1279,8 +1278,12 @@ function RepassesView({ dados, atualizar }) {
           ))}
         </div>
       )}
-      <Modal open={modalAberto} onClose={() => setModalAberto(false)} title={editando ? "Editar repasse" : "Novo repasse"} wide>
-        <FormRepasse inicial={editando} reservas={dados.reservas} onSalvar={salvar} onCancelar={() => setModalAberto(false)} />
+      <Card className="p-4 mt-6">
+        <h3 className="font-serif font-semibold text-stone-800 mb-3">Depósitos do Airbnb na conta da Cíntia</h3>
+        <div className="max-h-64 overflow-y-auto divide-y divide-stone-100">{[...dados.repasses].sort((a, b) => a.data < b.data ? 1 : -1).map((r) => <div key={r.id} className="flex justify-between py-2 text-sm"><span>{formatDateBR(r.data)}</span><strong className="font-mono">{formatBRL(r.valor)}</strong></div>)}</div>
+      </Card>
+      <Modal open={modalAberto} onClose={() => setModalAberto(false)} title={editando ? "Editar valor recebido" : "Registrar valor recebido da Cíntia"} wide>
+        <FormRepasse inicial={editando} onSalvar={salvar} onCancelar={() => setModalAberto(false)} />
       </Modal>
     </div>
   );
@@ -1313,7 +1316,7 @@ function FormDespesa({ inicial, onSalvar, onCancelar }) {
         </Field>
         <Field label="Quem pagou">
           <Select value={form.quemPagou} onChange={(e) => setForm({ ...form, quemPagou: e.target.value })}>
-            <option>Você</option><option>Gestor (descontado do repasse)</option>
+            <option>Você</option><option>Cíntia (descontar do acerto)</option><option>Gestor (descontado do repasse)</option>
           </Select>
         </Field>
         <Field label="Situação">
@@ -1687,7 +1690,7 @@ function AnaliseFinanceiraView({ dados, atualizar }) {
             <tr className="border-b border-stone-100 text-stone-500"><td className="py-1.5">(−) Taxa da plataforma</td><td className="py-1.5 text-right">{formatBRL(dre.taxaPlataforma)}</td></tr>
             <tr className="border-b border-stone-100 text-stone-500"><td className="py-1.5">(−) Despesas</td><td className="py-1.5 text-right">{formatBRL(dre.despesasMes)}</td></tr>
             <tr className="border-b border-stone-100 text-stone-500"><td className="py-1.5">(−) Pagamentos a prestadores (inclui comissão)</td><td className="py-1.5 text-right">{formatBRL(dre.pagamentosMes)}</td></tr>
-            <tr className="border-b border-stone-200"><td className="py-1.5 text-stone-500">Repassado pelo gestor</td><td className="py-1.5 text-right">{formatBRL(dre.repassadoMes)}</td></tr>
+            <tr className="border-b border-stone-200"><td className="py-1.5 text-stone-500">Recebido do Airbnb pela Cíntia</td><td className="py-1.5 text-right">{formatBRL(dre.repassadoMes)}</td></tr>
             <tr className="font-semibold text-base"><td className="py-2">Lucro líquido do período</td><td className={`py-2 text-right ${dre.lucroLiquido >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{formatBRL(dre.lucroLiquido)}</td></tr>
             <tr className="text-xs text-stone-400"><td className="py-1">Margem líquida</td><td className="py-1 text-right">{dre.margem.toFixed(1)}%</td></tr>
           </tbody>
@@ -1937,6 +1940,7 @@ export default function App() {
 
   const [reservas, setReservas] = useState(dadosIniciais.reservas);
   const [repasses, setRepasses] = useState(dadosIniciais.repasses);
+  const [transferencias, setTransferencias] = useState(dadosIniciais.transferencias);
   const [despesas, setDespesas] = useState(dadosIniciais.despesas);
   const [prestadores, setPrestadores] = useState(dadosIniciais.prestadores);
   const [lancamentos, setLancamentos] = useState(dadosIniciais.lancamentos);
@@ -1957,18 +1961,19 @@ export default function App() {
           cacheConfig(cfg);
           setCarregando(false);
         }
-        const [r, rp, d, p, l, m, mt] = await Promise.all([
+        const [r, rp, tr, d, p, l, m, mt] = await Promise.all([
           loadValue(KEYS.reservas, dadosIniciais.reservas),
           loadValue(KEYS.repasses, dadosIniciais.repasses),
+          loadValue(KEYS.transferencias, dadosIniciais.transferencias),
           loadValue(KEYS.despesas, dadosIniciais.despesas),
           loadValue(KEYS.prestadores, dadosIniciais.prestadores),
           loadValue(KEYS.lancamentos, dadosIniciais.lancamentos),
           loadValue(KEYS.manutencao, dadosIniciais.manutencao),
           loadValue(KEYS.metas, dadosIniciais.metas),
         ]);
-        setReservas(r); setRepasses(rp); setDespesas(d);
+        setReservas(r); setRepasses(rp); setTransferencias(tr); setDespesas(d);
         setPrestadores(p); setLancamentos(l); setManutencao(m); setMetas(mt);
-        cacheData({ reservas: r, repasses: rp, despesas: d, prestadores: p, lancamentos: l, manutencao: m, metas: mt });
+        cacheData({ reservas: r, repasses: rp, transferencias: tr, despesas: d, prestadores: p, lancamentos: l, manutencao: m, metas: mt });
       } catch (e) {
         setErroInicial("Não foi possível carregar a configuração compartilhada. Verifique a conexão e tente novamente.");
       } finally {
@@ -1977,12 +1982,12 @@ export default function App() {
     })();
   }, []);
 
-  const dados = { reservas, repasses, despesas, prestadores, lancamentos, manutencao, metas };
+  const dados = { reservas, repasses, transferencias, despesas, prestadores, lancamentos, manutencao, metas };
 
   // Atualiza estado local + persiste no storage. Recebe um objeto parcial, ex: { reservas: novaLista }
   const atualizar = useCallback(async (parcial) => {
-    const setters = { reservas: setReservas, repasses: setRepasses, despesas: setDespesas, prestadores: setPrestadores, lancamentos: setLancamentos, manutencao: setManutencao, metas: setMetas };
-    const keysMap = { reservas: KEYS.reservas, repasses: KEYS.repasses, despesas: KEYS.despesas, prestadores: KEYS.prestadores, lancamentos: KEYS.lancamentos, manutencao: KEYS.manutencao, metas: KEYS.metas };
+    const setters = { reservas: setReservas, repasses: setRepasses, transferencias: setTransferencias, despesas: setDespesas, prestadores: setPrestadores, lancamentos: setLancamentos, manutencao: setManutencao, metas: setMetas };
+    const keysMap = { reservas: KEYS.reservas, repasses: KEYS.repasses, transferencias: KEYS.transferencias, despesas: KEYS.despesas, prestadores: KEYS.prestadores, lancamentos: KEYS.lancamentos, manutencao: KEYS.manutencao, metas: KEYS.metas };
     cacheData({ ...readCachedData(), ...parcial });
     // Atualiza toda a interface antes de iniciar a sincronização remota. As
     // gravações entram numa fila única para uma importação nunca sobrescrever outra.
@@ -2033,7 +2038,7 @@ export default function App() {
 
   const titulos = {
     dashboard: "Painel", financeiro: "Análise financeira", calendario: "Calendário", reservas: "Reservas",
-    repasses: "Repasses", despesas: "Despesas", prestadores: "Prestadores", manutencao: "Manutenção", config: "Configurações",
+    repasses: "Acerto com a Cíntia", despesas: "Despesas", prestadores: "Prestadores", manutencao: "Manutenção", config: "Configurações",
   };
 
   return (
