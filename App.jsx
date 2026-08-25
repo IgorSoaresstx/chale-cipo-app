@@ -296,8 +296,10 @@ function MoneyInput({ value, onChange, ...props }) {
         {...props}
         type="number"
         step="0.01"
-        value={value}
+        value={value === 0 || value === "0" ? "" : value}
+        placeholder="0,00"
         onChange={(e) => onChange(parseNumeroBR(e.target.value))}
+        onFocus={(e) => e.target.select()}
         className="w-full pl-9 pr-3 py-2 border border-stone-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600"
       />
     </div>
