@@ -1451,7 +1451,7 @@ function ModalPagamento({ prestador, lancamentosPendentes, onConfirmar, onFechar
 function PrestadoresView({ dados, atualizar }) {
   const [modalAberto, setModalAberto] = useState(false);
   const [editando, setEditando] = useState(null);
-  const [pagandoPrestador, setPagandoPrestador] = useState(null);
+  const [pagamentoSelecionado, setPagamentoSelecionado] = useState(null);
 
   async function salvar(form) {
     let lista = [...dados.prestadores];
@@ -1475,10 +1475,10 @@ function PrestadoresView({ dados, atualizar }) {
   }
 
   async function confirmarPagamento(comprovanteNome) {
-    const ids = dados.lancamentos.filter((l) => l.prestadorId === pagandoPrestador.id && l.status === "pendente").map((l) => l.id);
+    const ids = pagamentoSelecionado.lancamentos.map((l) => l.id);
     const lista = dados.lancamentos.map((l) => ids.includes(l.id) ? { ...l, status: "pago", dataPagamento: todayISO(), comprovanteNome } : l);
     await atualizar({ lancamentos: lista });
-    setPagandoPrestador(null);
+    setPagamentoSelecionado(null);
   }
 
   return (
@@ -1491,6 +1491,7 @@ function PrestadoresView({ dados, atualizar }) {
         <div className="space-y-3">
           {dados.prestadores.map((p) => {
             const pendentes = dados.lancamentos.filter((l) => l.prestadorId === p.id && l.status === "pendente");
+            const lancamentosPrestador = dados.lancamentos.filter((l) => l.prestadorId === p.id).sort((a, b) => (a.data < b.data ? 1 : -1));
             const totalPendente = pendentes.reduce((s, l) => s + (Number(l.valor) || 0), 0);
             return (
               <Card key={p.id} className="p-4">
@@ -1515,9 +1516,28 @@ function PrestadoresView({ dados, atualizar }) {
                     Pendente: <span className="font-mono font-semibold">{formatBRL(totalPendente)}</span> em {pendentes.length} lançamento(s)
                   </span>
                   {pendentes.length > 0 && (
-                    <Button variant="secondary" onClick={() => setPagandoPrestador(p)}>Registrar pagamento</Button>
+                    p.tipo !== "Faxina" && <Button variant="secondary" onClick={() => setPagamentoSelecionado({ prestador: p, lancamentos: pendentes })}>Registrar pagamento</Button>
                   )}
                 </div>
+                {p.tipo === "Faxina" && lancamentosPrestador.length > 0 && (
+                  <div className="mt-3 divide-y divide-stone-100 rounded-md border border-stone-200">
+                    {lancamentosPrestador.map((l) => {
+                      const reserva = dados.reservas.find((r) => r.id === l.origemReservaId);
+                      return (
+                        <div key={l.id} className="flex items-center justify-between gap-3 p-3 flex-wrap">
+                          <div>
+                            <p className="text-sm font-medium text-stone-800">{reserva?.hospede || l.descricao || "Faxina"}</p>
+                            <p className="text-xs text-stone-500">Checkout: {formatDateBR(reserva?.checkout || l.data)} · <span className="font-mono">{formatBRL(l.valor)}</span></p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge tone={l.status === "pago" ? "emerald" : "amber"}>{l.status === "pago" ? `Paga em ${formatDateBR(l.dataPagamento)}` : "Pendente"}</Badge>
+                            {l.status === "pendente" && <Button variant="secondary" onClick={() => setPagamentoSelecionado({ prestador: p, lancamentos: [l] })}>Pagar esta faxina</Button>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </Card>
             );
           })}
@@ -1526,13 +1546,13 @@ function PrestadoresView({ dados, atualizar }) {
       <Modal open={modalAberto} onClose={() => setModalAberto(false)} title={editando ? "Editar prestador" : "Novo prestador"} wide>
         <FormPrestador inicial={editando} onSalvar={salvar} onCancelar={() => setModalAberto(false)} />
       </Modal>
-      <Modal open={!!pagandoPrestador} onClose={() => setPagandoPrestador(null)} title={`Pagar ${pagandoPrestador?.nome || ""}`} wide>
-        {pagandoPrestador && (
+      <Modal open={!!pagamentoSelecionado} onClose={() => setPagamentoSelecionado(null)} title={`Pagar ${pagamentoSelecionado?.prestador?.nome || ""}`} wide>
+        {pagamentoSelecionado && (
           <ModalPagamento
-            prestador={pagandoPrestador}
-            lancamentosPendentes={dados.lancamentos.filter((l) => l.prestadorId === pagandoPrestador.id && l.status === "pendente")}
+            prestador={pagamentoSelecionado.prestador}
+            lancamentosPendentes={pagamentoSelecionado.lancamentos}
             onConfirmar={confirmarPagamento}
-            onFechar={() => setPagandoPrestador(null)}
+            onFechar={() => setPagamentoSelecionado(null)}
           />
         )}
       </Modal>
